@@ -1,0 +1,22 @@
+{
+  "name": "nexconn-backend",
+  "version": "1.0.0",
+  "description": "Nexconn backend API",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test:login": "node tests/test-login.js",
+    "test:profile": "node tests/test-profile.js",
+    "test:resident": "node tests/test-resident.js",
+    "test:volunteer": "node tests/test-volunteer.js",
+    "test:admin": "node tests/test-admin.js",
+    "test:workflow": "node tests/test-workflow.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0"
+  }
+}
