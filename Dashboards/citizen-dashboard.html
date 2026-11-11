@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Citizen Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+
+    <div class="topbar">
+      <div class="brand">Relief<span>Link</span></div>
+      <div class="user-area">
+        <span id="user-name"></span>
+        <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
+      </div>
+    </div>
+
+    <div class="page">
+
+      <div class="hero">
+        <h1>Need help?</h1>
+        <p>Send a request and nearby volunteers will respond.</p>
+        <a class="big-btn" href="request.html">Request Help</a>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><strong id="count-total">0</strong><span>Total requests</span></div>
+        <div class="stat"><strong id="count-active">0</strong><span>Active</span></div>
+        <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
+      </div>
+
+      <h2>My Requests</h2>
+      <p class="error" id="error-message"></p>
+      <div id="request-list"></div>
+
+      <div class="helplines">
+        <h3>In immediate danger? Call:</h3>
+        <div class="helpline-list">
+          <a href="tel:112"><strong>112</strong>Emergency</a>
+          <a href="tel:108"><strong>108</strong>Ambulance</a>
+          <a href="tel:101"><strong>101</strong>Fire</a>
+          <a href="tel:100"><strong>100</strong>Police</a>
+          <a href="tel:1078"><strong>1078</strong>Disaster helpline</a>
+        </div>
+      </div>
+
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script>
+      const me = requireRole("citizen");
+
+      // What the citizen sees for each status
+      const citizenLabels = {
+        unassigned: "Waiting for a volunteer",
+        assigned: "Volunteer assigned",
+        inprogress: "In progress",
+        resolved: "Resolved",
+      };
+
+      // Build one request card from one request object
+      function makeCard(r) {
+        const card = el("div", "card");
+
+        const info = el("div");
+        info.append(el("h3", null, typeLabel(r.type)));
+        info.append(el("p", null, peopleText(r.people) + " · Requested " + timeAgo(r.createdAt)));
+        if (r.volunteerName) info.append(el("p", "assigned-to", "Volunteer: " + r.volunteerName));
+
+        const actions = el("div", "card-actions");
+        actions.append(el("span", "tag " + r.status, citizenLabels[r.status]));
+        if (r.volunteerId && r.status !== "resolved") {
+          const chat = el("a", "btn primary", "Open Chat");
+          chat.href = "chat.html?request=" + encodeURIComponent(r.id);   // chat page comes later
+          actions.append(chat);
+        }
+
+        card.append(info, actions);
+        return card;
+      }
+
+      async function load() {
+        const list = document.querySelector("#request-list");
+        try {
+          const requests = await api.getMyRequests();
+          list.innerHTML = "";                       // clear (safe: no user text here)
+          if (requests.length === 0) {
+            list.append(el("p", "empty", "You haven't made any requests yet."));
+          }
+          requests.forEach((r) => list.append(makeCard(r)));
+
+          document.querySelector("#count-total").textContent = requests.length;
+          document.querySelector("#count-active").textContent = requests.filter((r) => r.status !== "resolved").length;
+          document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "resolved").length;
+        } catch (err) {
+          document.querySelector("#error-message").textContent = err.message;
+        }
+      }
+
+      if (me) load();
+    </script>
+  </body>
+</html>

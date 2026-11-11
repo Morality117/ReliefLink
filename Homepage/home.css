@@ -1,0 +1,119 @@
+/* Homepage styles */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  color: #0b1b3a;
+  background: #fff;
+}
+section { scroll-margin-top: 70px; }   /* so the sticky nav doesn't cover headings */
+
+/* ---------- Navbar ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 6vw;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(30, 60, 120, 0.1);
+}
+.brand { font-size: 1.5rem; font-weight: 800; color: #0c2f6b; text-decoration: none; }
+.brand span { color: #f7931e; }
+.nav-links { display: flex; align-items: center; gap: 26px; }
+.nav-links a { color: #0b1b3a; text-decoration: none; font-weight: 500; }
+.nav-links a:hover { color: #0a3fd1; }
+
+.btn {
+  display: inline-block; padding: 12px 26px; border-radius: 12px;
+  font-weight: 600; font-size: 1rem; text-decoration: none; cursor: pointer;
+}
+.btn.primary { background: #0c2f6b; color: #fff; }
+.btn.primary:hover { background: #0a2557; }
+.btn.outline { background: transparent; color: #0c2f6b; border: 1.5px solid #0c2f6b; }
+.btn.outline:hover { background: #f4f7fd; }
+.btn.accent { background: #f7931e; color: #fff; }
+.btn.accent:hover { background: #dc7d10; }
+.nav-links .btn { padding: 9px 20px; }
+.nav-links .btn.primary { color: #fff; }
+
+/* ---------- Hero ---------- */
+.hero {
+  padding: 90px 6vw 100px;
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(160deg, #3a5f9a, #14305f);
+}
+.hero h1 { font-size: clamp(2.2rem, 5vw, 3.6rem); line-height: 1.15; margin: 0 0 16px; }
+.hero p { max-width: 620px; margin: 0 auto 32px; font-size: 1.15rem; line-height: 1.6; opacity: 0.92; }
+.hero-buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.hero .btn.accent { background: #f7931e; color: #fff; }
+.hero .btn.accent:hover { background: #dc7d10; }
+.hero .btn.outline { color: #fff; border-color: #fff; }
+.hero .btn.outline:hover { background: rgba(255, 255, 255, 0.12); }
+.hero small { display: block; margin-top: 22px; opacity: 0.85; }
+.hero small a { color: #fff; font-weight: 700; }
+
+/* ---------- Shared section styles ---------- */
+.section { padding: 80px 6vw; max-width: 1100px; margin: 0 auto; }
+.section.alt { max-width: none; background: #eef3fc; }
+.section.alt .inner { max-width: 1100px; margin: 0 auto; }
+.section h2 { font-size: 2rem; text-align: center; margin: 0 0 12px; }
+.section .lead { text-align: center; color: #5a6784; max-width: 600px; margin: 0 auto 44px; line-height: 1.6; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; }
+.box {
+  background: #fff; border-radius: 16px; padding: 26px;
+  box-shadow: 0 6px 20px rgba(30, 60, 120, 0.09);
+}
+.box h3 { margin: 0 0 8px; font-size: 1.15rem; }
+.box p { margin: 0; color: #5a6784; line-height: 1.55; }
+.icon {
+  width: 46px; height: 46px; border-radius: 12px; margin-bottom: 14px;
+  background: #e3ecfb; color: #0c2f6b;
+  display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+}
+
+/* How it works */
+.step-number {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: #0c2f6b; color: #fff; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+}
+.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 26px; }
+.two-col h3 { text-align: center; font-size: 1.3rem; margin: 0 0 18px; }
+.two-col .box { box-shadow: none; border: 1px solid #d5dcea; background: #fff; }
+
+/* Who it's for */
+.role-box { text-align: center; padding: 34px 26px; }
+.role-box .btn { margin-top: 20px; }
+
+/* ---------- FAQ ---------- */
+.faq { max-width: 760px; margin: 0 auto; }
+.faq details {
+  background: #fff; border: 1px solid #d5dcea; border-radius: 12px;
+  padding: 18px 22px; margin-bottom: 12px;
+}
+.faq summary { font-weight: 600; cursor: pointer; font-size: 1.05rem; }
+.faq details[open] summary { margin-bottom: 10px; color: #0a3fd1; }
+.faq p { margin: 0; color: #5a6784; line-height: 1.6; }
+
+/* ---------- Emergency strip ---------- */
+.emergency {
+  background: #fff4f4; border-top: 1px solid #f3c4c9; border-bottom: 1px solid #f3c4c9;
+  padding: 22px 6vw; text-align: center; color: #b81f2f;
+}
+.emergency a { color: #b81f2f; font-weight: 700; margin: 0 8px; text-decoration: none; }
+
+/* ---------- Footer ---------- */
+.footer { background: #0c2f6b; color: #cfd8e8; padding: 34px 6vw; text-align: center; }
+.footer .brand { color: #fff; display: block; margin-bottom: 10px; }
+.footer-links { margin-bottom: 14px; }
+.footer-links a { color: #cfd8e8; text-decoration: none; margin: 0 12px; }
+.footer p { margin: 0; font-size: 0.9rem; }
+
+@media (max-width: 760px) {
+  .nav-links a:not(.btn) { display: none; }   /* keep only Log In / Sign Up on phones */
+  .nav-links { gap: 10px; }
+  .hero { padding: 60px 6vw 70px; }
+  .section { padding: 56px 6vw; }
+}

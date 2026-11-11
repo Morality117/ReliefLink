@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+
+    <div class="topbar">
+      <div class="brand">Relief<span>Link</span></div>
+      <div class="user-area">
+        <span id="user-name"></span>
+        <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
+      </div>
+    </div>
+
+    <div class="page">
+
+      <div class="hero">
+        <h1>Admin panel</h1>
+        <p>See every help request and assign a volunteer to each one.</p>
+      </div>
+
+      <div class="stats four">
+        <div class="stat"><strong id="count-total">0</strong><span>Total requests</span></div>
+        <div class="stat"><strong id="count-unassigned">0</strong><span>Unassigned</span></div>
+        <div class="stat"><strong id="count-active">0</strong><span>Active</span></div>
+        <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
+      </div>
+
+      <h2>All Requests</h2>
+      <p class="error" id="error-message"></p>
+
+      <div class="tabs" id="filter-tabs">
+        <button class="tab active" data-filter="all">All</button>
+        <button class="tab" data-filter="unassigned">Unassigned</button>
+        <button class="tab" data-filter="assigned">Assigned</button>
+        <button class="tab" data-filter="inprogress">In progress</button>
+        <button class="tab" data-filter="resolved">Resolved</button>
+      </div>
+
+      <div id="request-list"></div>
+    </div>
+
+    <!-- Pop-up: choose a volunteer -->
+    <div class="modal-backdrop" id="modal">
+      <div class="modal">
+        <h3>Assign a volunteer</h3>
+        <p class="hint">Choose who should handle this request.</p>
+        <div id="volunteer-list"></div>
+        <button class="btn outline" id="cancel-btn" style="width:100%; margin-top:6px;">Cancel</button>
+      </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script>
+      const me = requireRole("admin");
+
+      let requests = [];
+      let volunteers = [];
+      let selectedRequest = null;
+      let currentFilter = "all";
+
+      // ----- One request card -----
+      function makeCard(r) {
+        const card = el("div", "card");
+
+        const info = el("div");
+        const title = el("h3", null, typeLabel(r.type) + " ");
+        if (r.urgency === "high") title.append(el("span", "tag high", "High urgency"));
+        info.append(title);
+        info.append(el("p", null, peopleText(r.people) + " · Requested by " + r.residentName + " · " + timeAgo(r.createdAt)));
+        info.append(el("p", "assigned-to", r.volunteerName ? "Assigned to: " + r.volunteerName : "Not assigned yet"));
+
+        const actions = el("div", "card-actions");
+        actions.append(el("span", "tag " + r.status, STATUS_LABELS[r.status]));
+        if (r.status === "unassigned") {
+          const button = el("button", "btn primary", "Assign volunteer");
+          button.addEventListener("click", () => openModal(r));
+          actions.append(button);
+        }
+
+        card.append(info, actions);
+        return card;
+      }
+
+      // ----- Draw cards and counters -----
+      function render() {
+        const list = document.querySelector("#request-list");
+        list.innerHTML = "";
+        const shown = requests.filter((r) => currentFilter === "all" || r.status === currentFilter);
+        if (shown.length === 0) list.append(el("p", "empty", "No requests here."));
+        shown.forEach((r) => list.append(makeCard(r)));
+
+        document.querySelector("#count-total").textContent = requests.length;
+        document.querySelector("#count-unassigned").textContent = requests.filter((r) => r.status === "unassigned").length;
+        document.querySelector("#count-active").textContent = requests.filter((r) => r.status === "assigned" || r.status === "inprogress").length;
+        document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "resolved").length;
+      }
+
+      async function load() {
+        try {
+          [requests, volunteers] = await Promise.all([api.getAllRequests(), api.getVolunteers()]);
+          render();
+        } catch (err) {
+          document.querySelector("#error-message").textContent = err.message;
+        }
+      }
+
+      // ----- Pop-up -----
+      const modal = document.querySelector("#modal");
+
+      function openModal(request) {
+        selectedRequest = request;
+        const list = document.querySelector("#volunteer-list");
+        list.innerHTML = "";
+
+        volunteers.forEach((v) => {
+          const active = requests.filter((r) => r.volunteerId === v.id && r.status !== "resolved").length;
+          const button = el("button", "volunteer-option");
+          const left = el("span");
+          left.append(v.name);
+          left.append(el("small", null, v.email + " · " + active + " active task" + (active === 1 ? "" : "s")));
+          button.append(left, el("span", null, "Assign"));
+
+          button.addEventListener("click", async () => {
+            try {
+              await api.assignVolunteer(selectedRequest.id, v.id);
+              modal.style.display = "none";
+              await load();
+            } catch (err) {
+              modal.style.display = "none";
+              document.querySelector("#error-message").textContent = err.message;
+            }
+          });
+          list.append(button);
+        });
+
+        modal.style.display = "flex";
+      }
+      document.querySelector("#cancel-btn").addEventListener("click", () => { modal.style.display = "none"; });
+
+      // ----- Filter tabs -----
+      const tabs = document.querySelectorAll("#filter-tabs .tab");
+      tabs.forEach((tab) => tab.addEventListener("click", () => {
+        tabs.forEach((x) => x.classList.remove("active"));
+        tab.classList.add("active");
+        currentFilter = tab.dataset.filter;
+        render();
+      }));
+
+      if (me) load();
+    </script>
+  </body>
+</html>

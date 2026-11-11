@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Request Help</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+
+    <div class="topbar">
+      <div class="brand">Relief<span>Link</span></div>
+      <div class="user-area">
+        <span id="user-name"></span>
+        <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
+      </div>
+    </div>
+
+    <div class="page">
+      <a class="back-link" href="citizen-dashboard.html">← Back to dashboard</a>
+      <h2>Request Help</h2>
+
+      <form class="form-card" id="request-form">
+
+        <label class="title" for="type">What do you need?</label>
+        <select id="type" name="type" required>
+          <option value="">Choose one</option>
+          <option value="food">Food and drinking water</option>
+          <option value="medical">Medical help</option>
+          <option value="rescue">Rescue / evacuation</option>
+          <option value="shelter">Shelter</option>
+          <option value="other">Other</option>
+        </select>
+
+        <label class="title" for="people">How many people need help?</label>
+        <input id="people" name="people" type="number" min="1" value="1" required>
+
+        <label class="title">How urgent is it?</label>
+        <div class="choice-row">
+          <label><input type="radio" name="urgency" value="low"> Low</label>
+          <label><input type="radio" name="urgency" value="medium" checked> Medium</label>
+          <label><input type="radio" name="urgency" value="high"> High</label>
+        </div>
+
+        <label class="title" for="description">Describe the situation</label>
+        <textarea id="description" name="description" placeholder="For example: water level is rising, two elderly people on the second floor"></textarea>
+
+        <label class="title" for="location">Your location</label>
+        <div class="location-row">
+          <input id="location" name="location" type="text" placeholder="Address or landmark">
+          <button type="button" class="btn outline" id="locate-btn">Use my current location</button>
+        </div>
+        <p class="hint" id="location-hint"></p>
+        <p class="hint" id="coords"></p>
+
+        <!-- Tap the map or drag the pin to set the exact spot -->
+        <p class="hint">Or tap the map to drop a pin. You can drag the pin to adjust it.</p>
+        <div id="map" style="width: 100%; height: 400px;"></div>
+
+        <p class="error" id="error-message" style="color:#d62839;"></p>
+        <button type="submit" class="btn primary">Send Request</button>
+      </form>
+    </div>
+
+    <!-- Load Google Maps API with your key -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCPhHPT-YfuZ_dMictykzl3FawpMv_-ASk&callback=initMap"></script>
+    <script src="../js/api.js"></script>
+    <script>
+      let latitude = null;
+      let longitude = null;
+      let accuracy = null;
+      let map, marker;
+
+      const hint = document.querySelector("#location-hint");
+      const coords = document.querySelector("#coords");
+      const box = document.querySelector("#location");
+
+      function initMap() {
+        const defaultCenter = { lat: 22.5726, lng: 88.3639 };
+        
+        map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 11,
+          center: defaultCenter,
+        });
+
+        // Tapping the map drops or moves the marker
+        map.addListener("click", (e) => {
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          setLocation(lat, lng, null);
+        });
+      }
+
+      function placeMarker(lat, lng) {
+        const pos = { lat, lng };
+        if (marker) {
+          marker.setPosition(pos);
+        } else {
+          marker = new google.maps.Marker({
+            position: pos,
+            map: map,
+            draggable: true,
+          });
+          // Dragging the pin updates coordinates
+          marker.addListener("dragend", () => {
+            const p = marker.getPosition();
+            setLocation(p.lat(), p.lng(), null);
+          });
+        }
+      }
+
+      async function setLocation(lat, lng, acc) {
+        latitude = lat;
+        longitude = lng;
+        accuracy = acc;
+        placeMarker(lat, lng);
+        map.panTo({ lat, lng });
+
+        coords.innerHTML =
+          "Coordinates: " + lat.toFixed(5) + ", " + lng.toFixed(5) +
+          (acc ? " (accurate to about " + acc + " m)" : " (pinned on the map)") + " · " +
+          '<a href="https://www.google.com/maps?q=' + lat + ',' + lng +
+          '" target="_blank">Check on map</a>';
+
+        hint.textContent = "Finding your address...";
+        try {
+          const url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng;
+          const res = await fetch(url);
+          const data = await res.json();
+          box.value = data.display_name;
+          hint.textContent = "Address found. It may not be exact, so please correct it if needed.";
+        } catch (err) {
+          hint.textContent = "Couldn't find the address. Please type it.";
+        }
+      }
+
+      document.querySelector("#locate-btn").addEventListener("click", () => {
+        hint.textContent = "Getting your location...";
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            map.setZoom(16);
+            setLocation(lat, lng, Math.round(position.coords.accuracy));
+          },
+          () => {
+            hint.textContent = "Couldn't get your location. Tap the map or type your address.";
+          }
+        );
+      });
+
+      requireRole("citizen");
+
+      const errorBox = document.querySelector("#error-message");
+
+      document.querySelector("#request-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorBox.textContent = "";
+
+        if (latitude === null) {
+          errorBox.textContent = "Please set your location: use the button or tap the map.";
+          return;
+        }
+
+        const button = e.target.querySelector("button[type='submit']");
+        button.disabled = true;
+        try {
+          await api.createRequest({
+            type: document.querySelector("#type").value,
+            people: document.querySelector("#people").value,
+            urgency: document.querySelector("input[name='urgency']:checked").value,
+            description: document.querySelector("#description").value,
+            location: document.querySelector("#location").value,
+            latitude: latitude,
+            longitude: longitude,
+            accuracy: accuracy,
+          });
+          window.location.href = "citizen-dashboard.html";
+        } catch (err) {
+          errorBox.textContent = err.message;
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

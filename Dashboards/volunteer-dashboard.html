@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Volunteer Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+
+    <div class="topbar">
+      <div class="brand">Relief<span>Link</span></div>
+      <div class="user-area">
+        <span id="user-name"></span>
+        <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
+      </div>
+    </div>
+
+    <div class="page">
+
+      <div class="hero">
+        <h1>My assigned tasks</h1>
+        <p>These requests were assigned to you by an admin. Update the status as you go.</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><strong id="count-assigned">0</strong><span>Assigned</span></div>
+        <div class="stat"><strong id="count-inprogress">0</strong><span>In progress</span></div>
+        <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
+      </div>
+
+      <div id="map" style="width: 100%; height: 400px;"></div>
+
+      <h2>My Tasks</h2>
+      <p class="error" id="error-message"></p>
+
+      <div class="tabs" id="filter-tabs">
+        <button class="tab active" data-filter="all">All</button>
+        <button class="tab" data-filter="assigned">Assigned</button>
+        <button class="tab" data-filter="inprogress">In progress</button>
+        <button class="tab" data-filter="resolved">Resolved</button>
+      </div>
+      <div class="tabs" id="sort-tabs">
+        <button class="tab active" data-sort="urgency">Most urgent first</button>
+        <button class="tab" data-sort="newest">Newest first</button>
+      </div>
+
+      <div id="task-list"></div>
+    </div>
+
+    <!-- Load Google Maps API with your key -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCPhHPT-YfuZ_dMictykzl3FawpMv_-ASk&callback=initMap"></script>
+    <script src="../js/api.js"></script>
+    <script>
+      const me = requireRole("volunteer");
+
+      let tasks = [];
+      let currentFilter = "all";
+      let currentSort = "urgency";
+      const rank = { high: 0, medium: 1, low: 2 };
+      const nextStatus = { assigned: "inprogress", inprogress: "resolved" };
+      const buttonText = { assigned: "Start task", inprogress: "Mark resolved" };
+
+      let map;
+      let markersById = {};
+      let activeMarkers = [];
+
+      function initMap() {
+        map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 11,
+          center: { lat: 22.5726, lng: 88.3639 },
+        });
+
+        if (me) {
+          load().then(() => {
+            fitBoundsToTasks();
+          });
+        }
+      }
+
+      function clearMarkers() {
+        activeMarkers.forEach(m => m.setMap(null));
+        activeMarkers = [];
+        markersById = {};
+      }
+
+      function fitBoundsToTasks() {
+        const points = tasks.filter((t) => t.latitude != null);
+        if (points.length === 0) return;
+        const bounds = new google.maps.LatLngBounds();
+        points.forEach(t => bounds.extend({ lat: t.latitude, lng: t.longitude }));
+        map.fitBounds(bounds);
+      }
+
+      // ----- One task card -----
+      function makeCard(t) {
+        const card = el("div", "card");
+
+        const info = el("div");
+        const title = el("h3", null, typeLabel(t.type) + " ");
+        if (t.urgency === "high") title.append(el("span", "tag high", "High urgency"));
+        info.append(title);
+        info.append(el("p", null, peopleText(t.people) + " · Requested by " + t.residentName + " · " + timeAgo(t.createdAt)));
+        if (t.location) info.append(el("p", null, "Location: " + t.location));
+        if (t.description) info.append(el("p", null, "“" + t.description + "”"));
+
+        const actions = el("div", "card-actions");
+        actions.append(el("span", "tag " + t.status, STATUS_LABELS[t.status]));
+
+        const view = el("button", "btn outline", "View location");
+        view.addEventListener("click", () => {
+          if (t.latitude == null) return;
+          map.setCenter({ lat: t.latitude, lng: t.longitude });
+          map.setZoom(15);
+          if (markersById[t.id]) {
+            const infowindow = new google.maps.InfoWindow({
+              content: "<div><strong>" + typeLabel(t.type) + "</strong></div>"
+            });
+            infowindow.open(map, markersById[t.id]);
+          }
+          document.querySelector("#map").scrollIntoView({ behavior: "smooth" });
+        });
+        actions.append(view);
+
+        if (t.status !== "resolved") {
+          const chat = el("a", "btn outline", "Open Chat");
+          chat.href = "chat.html?request=" + encodeURIComponent(t.id);
+          actions.append(chat);
+
+          const action = el("button", "btn primary", buttonText[t.status]);
+          action.addEventListener("click", async () => {
+            action.disabled = true;
+            try {
+              await api.updateStatus(t.id, nextStatus[t.status]);
+              await load();
+            } catch (err) {
+              document.querySelector("#error-message").textContent = err.message;
+              action.disabled = false;
+            }
+          });
+          actions.append(action);
+        }
+
+        card.append(info, actions);
+        return card;
+      }
+
+      // ----- Draw everything (cards, markers, counters) -----
+      function render() {
+        const list = document.querySelector("#task-list");
+        list.innerHTML = "";
+        clearMarkers();
+
+        const shown = tasks
+          .filter((t) => currentFilter === "all" || t.status === currentFilter)
+          .sort((a, b) => currentSort === "newest" ? b.createdAt - a.createdAt : rank[a.urgency] - rank[b.urgency]);
+
+        if (shown.length === 0) list.append(el("p", "empty", "No tasks here yet."));
+
+        shown.forEach((t) => {
+          list.append(makeCard(t));
+          if (t.latitude != null) {
+            const marker = new google.maps.Marker({
+              position: { lat: t.latitude, lng: t.longitude },
+              map: map,
+              title: typeLabel(t.type),
+            });
+            activeMarkers.push(marker);
+            markersById[t.id] = marker;
+          }
+        });
+
+        ["assigned", "inprogress", "resolved"].forEach((status) => {
+          document.querySelector("#count-" + status).textContent = tasks.filter((t) => t.status === status).length;
+        });
+      }
+
+      async function load() {
+        try {
+          tasks = await api.getMyTasks();
+          render();
+        } catch (err) {
+          document.querySelector("#error-message").textContent = err.message;
+        }
+      }
+
+      // ----- Tabs -----
+      function setupTabs(id, onPick) {
+        const tabs = document.querySelectorAll("#" + id + " .tab");
+        tabs.forEach((tab) => tab.addEventListener("click", () => {
+          tabs.forEach((x) => x.classList.remove("active"));
+          tab.classList.add("active");
+          onPick(tab);
+          render();
+        }));
+      }
+      setupTabs("filter-tabs", (tab) => { currentFilter = tab.dataset.filter; });
+      setupTabs("sort-tabs", (tab) => { currentSort = tab.dataset.sort; });
+    </script>
+  </body>
+</html>

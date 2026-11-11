@@ -1,0 +1,208 @@
+/* ---------- Basics ---------- */
+* { box-sizing: border-box; }          /* width includes padding + border */
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;                        /* centers the card on the page */
+  justify-content: center;
+  align-items: center;
+  background: #eef3fc;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  color: #0b1b3a;
+}
+
+/* ---------- Card (two halves side by side) ---------- */
+.container {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;    /* left slightly wider than right */
+  width: min(1000px, 94vw);
+  min-height: 520px;
+  background: #fff;
+  border-radius: 22px;
+  overflow: hidden;                     /* clips children to rounded corners */
+  box-shadow: 0 20px 50px rgba(30, 60, 120, 0.18);
+}
+
+/* ---------- Left: branding ---------- */
+.left {
+  padding: 48px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* Dark blue overlay on top of a placeholder gradient.
+     To use a real photo, replace the last gradient with:
+     url("flood.jpg") center / cover                       */
+  background:
+    linear-gradient(rgba(16, 52, 112, 0.78), rgba(16, 52, 112, 0.9)),
+    linear-gradient(160deg, #3a5f9a, #14305f);
+}
+
+.logo { font-size: 2.6rem; font-weight: 800; margin: 0; }
+.logo span { color: #f7931e; }          /* "Link" in orange */
+
+.tagline { font-style: italic; margin: 6px 0 16px; }
+
+.accent-line {
+  width: 60px;
+  height: 3px;
+  background: #f7931e;
+  border: none;
+  margin: 0 0 28px;
+}
+
+.left h2 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; }
+.left .desc { margin: 0; opacity: 0.9; line-height: 1.5; }
+
+.features {
+  display: flex;
+  gap: 24px;
+  margin-top: 32px;
+  font-size: 0.85rem;
+}
+.features div + div {                   /* divider line between items */
+  padding-left: 24px;
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- Right: form ---------- */
+.right {
+  padding: 48px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.welcome { text-align: center; font-size: 2.1rem; margin: 0; }
+.subtitle { text-align: center; color: #5a6784; margin: 8px 0 28px; }
+
+/* Input box with an icon inside */
+.field {
+  position: relative;                   /* so icons can be positioned inside */
+  margin-bottom: 16px;
+}
+.field input {
+  width: 100%;
+  padding: 15px 44px;                   /* room left and right for icons */
+  border: 1px solid #cfd8e8;
+  border-radius: 12px;
+  font-size: 1rem;
+  outline: none;
+}
+.field input:focus { border-color: #1a4fd8; }
+
+.field .icon-left,
+.field .icon-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);          /* perfect vertical centering */
+  width: 20px;
+  height: 20px;
+}
+.icon-left { left: 14px; }
+.icon-right { right: 14px; color: #6b7690; }
+
+/* Remember me / Forgot password row */
+.options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 4px 0 20px;
+  font-size: 0.95rem;
+}
+.options label { display: flex; align-items: center; gap: 8px; }
+.options a, .signup a {
+  color: #0a3fd1;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* Buttons */
+button {
+  width: 100%;
+  padding: 15px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+.login-btn {
+  background: #0c2f6b;
+  color: #fff;
+  border: none;
+}
+.login-btn:hover { background: #0a2557; }
+
+.google-btn {
+  background: #fff;
+  color: #0b1b3a;
+  border: 1px solid #0c2f6b;
+}
+.google-btn:hover { background: #f4f7fd; }
+
+/* "or" with lines on both sides */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #6b7690;
+  margin: 14px 0;
+}
+.divider::before,
+.divider::after {                       /* the two lines */
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #d5dcea;
+}
+
+.signup { text-align: center; color: #5a6784; margin: 20px 0 0; }
+
+/* ---------- Mobile: stack the halves ---------- */
+@media (max-width: 760px) {
+  .container { grid-template-columns: 1fr; }
+  .left { padding: 32px; }
+}
+
+/* ---------- Sign-up page additions ---------- */
+.role-choice { display: flex; gap: 12px; margin-bottom: 16px; }
+.role-choice label {
+  flex: 1;
+  text-align: center;
+  padding: 14px 10px;
+  border: 1px solid #cfd8e8;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.role-choice input { display: none; }          /* hide the radio circle */
+.role-choice label:has(input:checked) {         /* highlight the chosen box */
+  background: #0c2f6b;
+  border-color: #0c2f6b;
+  color: #fff;
+}
+
+.error {                                        /* JS will fill this in later */
+  color: #d62839;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+  margin: 0 0 8px;
+}
+
+.right.signup-side { padding: 36px 44px; }
+.signup-side .welcome { font-size: 1.9rem; }
+.signup-side .subtitle { margin-bottom: 20px; }
+.signup-side .field { margin-bottom: 12px; }
+
+/* ---------- Added with the JS wiring ---------- */
+.back-home { display: inline-block; margin-bottom: 10px; color: #0a3fd1; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+.icon-right { cursor: pointer; }
+.demo-hint {
+  margin-top: 16px; padding: 10px 12px; background: #f4f7fd; border: 1px dashed #b8c6e0;
+  border-radius: 10px; font-size: 0.8rem; color: #5a6784; line-height: 1.5;
+}
