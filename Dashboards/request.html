@@ -25,25 +25,18 @@
         <label class="title" for="type">What do you need?</label>
         <select id="type" name="type" required>
           <option value="">Choose one</option>
-          <option value="food">Food and drinking water</option>
-          <option value="medical">Medical help</option>
-          <option value="rescue">Rescue / evacuation</option>
-          <option value="shelter">Shelter</option>
-          <option value="other">Other</option>
+          <option value="Rescue">Rescue / evacuation</option>
+          <option value="Food">Food</option>
+          <option value="Water">Drinking water</option>
+          <option value="Medical">Medical help</option>
+          <option value="Other">Other (shelter, supplies...)</option>
         </select>
 
         <label class="title" for="people">How many people need help?</label>
         <input id="people" name="people" type="number" min="1" value="1" required>
 
-        <label class="title">How urgent is it?</label>
-        <div class="choice-row">
-          <label><input type="radio" name="urgency" value="low"> Low</label>
-          <label><input type="radio" name="urgency" value="medium" checked> Medium</label>
-          <label><input type="radio" name="urgency" value="high"> High</label>
-        </div>
-
-        <label class="title" for="description">Describe the situation</label>
-        <textarea id="description" name="description" placeholder="For example: water level is rising, two elderly people on the second floor"></textarea>
+                <label class="title" for="description">Describe the situation</label>
+        <textarea id="description" name="description" required placeholder="For example: water level is rising, two elderly people on the second floor"></textarea>
 
         <label class="title" for="location">Your location</label>
         <div class="location-row">
@@ -55,53 +48,56 @@
 
         <!-- Tap the map or drag the pin to set the exact spot -->
         <p class="hint">Or tap the map to drop a pin. You can drag the pin to adjust it.</p>
-        <div id="map" style="width: 100%; height: 400px;"></div>
+        <div id="map"></div>
 
         <p class="error" id="error-message" style="color:#d62839;"></p>
         <button type="submit" class="btn primary">Send Request</button>
       </form>
     </div>
 
-    <!-- Load Google Maps API with your key -->
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCPhHPT-YfuZ_dMictykzl3FawpMv_-ASk&callback=initMap"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
     <script>
+      // The chosen location (filled in by GPS or by tapping the map)
       let latitude = null;
       let longitude = null;
-      let accuracy = null;
-      let map, marker;
+      let accuracy = null;      // metres; stays null when the user places the pin by hand
 
       const hint = document.querySelector("#location-hint");
       const coords = document.querySelector("#coords");
       const box = document.querySelector("#location");
 
-      function initMap() {
-        const defaultCenter = { lat: 22.5726, lng: 88.3639 };
-        
-        map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 11,
-          center: defaultCenter,
-        });
+      // ----- Map (Google Maps) -----
+      let map = null;
+      let marker = null;
 
-        // Tapping the map drops or moves the marker
-        map.addListener("click", (e) => {
-          const lat = e.latLng.lat();
-          const lng = e.latLng.lng();
-          setLocation(lat, lng, null);
+      async function initMap() {
+        try {
+          await loadGoogleMaps();
+        } catch (err) {
+          hint.textContent = err.message + ". You can still type your address.";
+          return;
+        }
+        map = new google.maps.Map(document.querySelector("#map"), {
+          center: { lat: 22.5726, lng: 88.3639 },   // starting view: change to your area
+          zoom: 11,
+          mapTypeControl: false,
+          streetViewControl: false,
         });
+        // Tapping the map drops the pin there
+        map.addListener("click", (e) => setLocation(e.latLng.lat(), e.latLng.lng(), null));
+        if (latitude !== null) placeMarker(latitude, longitude);   // in case the GPS answered first
       }
 
+      // Put the pin on the map (or move it if it's already there)
       function placeMarker(lat, lng) {
-        const pos = { lat, lng };
+        if (!map) return;
+        const position = { lat: lat, lng: lng };
         if (marker) {
-          marker.setPosition(pos);
+          marker.setPosition(position);
         } else {
-          marker = new google.maps.Marker({
-            position: pos,
-            map: map,
-            draggable: true,
-          });
-          // Dragging the pin updates coordinates
+          marker = new google.maps.Marker({ position: position, map: map, draggable: true });
+          // when the user finishes dragging the pin, use the new spot
           marker.addListener("dragend", () => {
             const p = marker.getPosition();
             setLocation(p.lat(), p.lng(), null);
@@ -109,19 +105,21 @@
         }
       }
 
+      // One function that handles a new location, wherever it came from
       async function setLocation(lat, lng, acc) {
         latitude = lat;
         longitude = lng;
         accuracy = acc;
         placeMarker(lat, lng);
-        map.panTo({ lat, lng });
 
+        // Show the coordinates straight away
         coords.innerHTML =
           "Coordinates: " + lat.toFixed(5) + ", " + lng.toFixed(5) +
           (acc ? " (accurate to about " + acc + " m)" : " (pinned on the map)") + " · " +
           '<a href="https://www.google.com/maps?q=' + lat + ',' + lng +
           '" target="_blank">Check on map</a>';
 
+        // Then look up the address
         hint.textContent = "Finding your address...";
         try {
           const url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng;
@@ -134,13 +132,16 @@
         }
       }
 
+      initMap();   // load Google Maps and draw the map
+
+      // "Use my current location" button
       document.querySelector("#locate-btn").addEventListener("click", () => {
         hint.textContent = "Getting your location...";
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            map.setZoom(16);
+            if (map) { map.setCenter({ lat: lat, lng: lng }); map.setZoom(16); }   // zoom the map to the user
             setLocation(lat, lng, Math.round(position.coords.accuracy));
           },
           () => {
@@ -149,14 +150,17 @@
         );
       });
 
-      requireRole("citizen");
+      // Only residents (citizens) may open this page
+      requireRole("resident");
 
       const errorBox = document.querySelector("#error-message");
 
+      // Form submit: check the location, then send the request
       document.querySelector("#request-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         errorBox.textContent = "";
 
+        // A request without a location can't be shown on the volunteer map
         if (latitude === null) {
           errorBox.textContent = "Please set your location: use the button or tap the map.";
           return;
@@ -165,15 +169,19 @@
         const button = e.target.querySelector("button[type='submit']");
         button.disabled = true;
         try {
+          // The backend stores a category, a description and a position.
+          // So the number of people and the address go into the description text.
+          let text = document.querySelector("#description").value.trim();
+          const people = Number(document.querySelector("#people").value);
+          const address = document.querySelector("#location").value.trim();
+          if (people > 1) text += "\nPeople needing help: " + people;
+          if (address) text += "\nAddress: " + address;
+
           await api.createRequest({
-            type: document.querySelector("#type").value,
-            people: document.querySelector("#people").value,
-            urgency: document.querySelector("input[name='urgency']:checked").value,
-            description: document.querySelector("#description").value,
-            location: document.querySelector("#location").value,
+            category: document.querySelector("#type").value,
+            description: text,
             latitude: latitude,
             longitude: longitude,
-            accuracy: accuracy,
           });
           window.location.href = "citizen-dashboard.html";
         } catch (err) {
