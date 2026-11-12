@@ -19,183 +19,173 @@
     <div class="page">
 
       <div class="hero">
-        <h1>My assigned tasks</h1>
-        <p>These requests were assigned to you by an admin. Update the status as you go.</p>
+        <h1>People who need help</h1>
+        <p>Accept a request to take it on, then keep its status up to date.</p>
       </div>
 
       <div class="stats">
-        <div class="stat"><strong id="count-assigned">0</strong><span>Assigned</span></div>
-        <div class="stat"><strong id="count-inprogress">0</strong><span>In progress</span></div>
-        <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
+        <div class="stat"><strong id="count-available">0</strong><span>Waiting for a volunteer</span></div>
+        <div class="stat"><strong id="count-active">0</strong><span>My active tasks</span></div>
+        <div class="stat"><strong id="count-resolved">0</strong><span>Resolved by me</span></div>
       </div>
 
-      <div id="map" style="width: 100%; height: 400px;"></div>
-
-      <h2>My Tasks</h2>
+      <div id="map"></div>
       <p class="error" id="error-message"></p>
 
-      <div class="tabs" id="filter-tabs">
-        <button class="tab active" data-filter="all">All</button>
-        <button class="tab" data-filter="assigned">Assigned</button>
-        <button class="tab" data-filter="inprogress">In progress</button>
-        <button class="tab" data-filter="resolved">Resolved</button>
-      </div>
-      <div class="tabs" id="sort-tabs">
-        <button class="tab active" data-sort="urgency">Most urgent first</button>
-        <button class="tab" data-sort="newest">Newest first</button>
-      </div>
+      <h2>Available Requests</h2>
+      <div id="available-list"></div>
 
+      <h2>My Tasks</h2>
       <div id="task-list"></div>
     </div>
 
-    <!-- Load Google Maps API with your key -->
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCPhHPT-YfuZ_dMictykzl3FawpMv_-ASk&callback=initMap"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
     <script>
       const me = requireRole("volunteer");
+      const errorBox = document.querySelector("#error-message");
 
+      let available = [];
       let tasks = [];
-      let currentFilter = "all";
-      let currentSort = "urgency";
-      const rank = { high: 0, medium: 1, low: 2 };
-      const nextStatus = { assigned: "inprogress", inprogress: "resolved" };
-      const buttonText = { assigned: "Start task", inprogress: "Mark resolved" };
 
-      let map;
+      // ----- Map (Google Maps) -----
+      let map = null;
+      let infoWindow = null;
+      let markers = [];
       let markersById = {};
-      let activeMarkers = [];
 
-      function initMap() {
-        map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 11,
-          center: { lat: 22.5726, lng: 88.3639 },
-        });
-
-        if (me) {
-          load().then(() => {
-            fitBoundsToTasks();
+      const mapReady = (async () => {
+        try {
+          await loadGoogleMaps();
+          map = new google.maps.Map(document.querySelector("#map"), {
+            center: { lat: 22.5726, lng: 88.3639 },
+            zoom: 11,
+            mapTypeControl: false,
+            streetViewControl: false,
           });
+          infoWindow = new google.maps.InfoWindow();
+        } catch (err) {
+          errorBox.textContent = err.message;
         }
+      })();
+
+      function showInfo(marker) {
+        infoWindow.setContent(el("div", null, marker.getTitle()));   // el() = safe text, not HTML
+        infoWindow.open(map, marker);
       }
 
-      function clearMarkers() {
-        activeMarkers.forEach(m => m.setMap(null));
-        activeMarkers = [];
-        markersById = {};
+      function focusOn(r) {
+        if (!map) return;
+        map.panTo({ lat: r.latitude, lng: r.longitude });
+        map.setZoom(15);
+        if (markersById[r.id]) showInfo(markersById[r.id]);
+        document.querySelector("#map").scrollIntoView({ behavior: "smooth" });
       }
 
-      function fitBoundsToTasks() {
-        const points = tasks.filter((t) => t.latitude != null);
-        if (points.length === 0) return;
-        const bounds = new google.maps.LatLngBounds();
-        points.forEach(t => bounds.extend({ lat: t.latitude, lng: t.longitude }));
-        map.fitBounds(bounds);
-      }
-
-      // ----- One task card -----
-      function makeCard(t) {
+      // The part every card has: title, text, status, and "View location"
+      function baseCard(r) {
         const card = el("div", "card");
-
         const info = el("div");
-        const title = el("h3", null, typeLabel(t.type) + " ");
-        if (t.urgency === "high") title.append(el("span", "tag high", "High urgency"));
-        info.append(title);
-        info.append(el("p", null, peopleText(t.people) + " · Requested by " + t.residentName + " · " + timeAgo(t.createdAt)));
-        if (t.location) info.append(el("p", null, "Location: " + t.location));
-        if (t.description) info.append(el("p", null, "“" + t.description + "”"));
+        info.append(el("h3", null, r.category));
+        if (r.description) info.append(el("p", null, r.description));
+        info.append(el("p", null, "Requested " + timeAgo(r.createdAt)));
 
         const actions = el("div", "card-actions");
-        actions.append(el("span", "tag " + t.status, STATUS_LABELS[t.status]));
-
-        const view = el("button", "btn outline", "View location");
-        view.addEventListener("click", () => {
-          if (t.latitude == null) return;
-          map.setCenter({ lat: t.latitude, lng: t.longitude });
-          map.setZoom(15);
-          if (markersById[t.id]) {
-            const infowindow = new google.maps.InfoWindow({
-              content: "<div><strong>" + typeLabel(t.type) + "</strong></div>"
-            });
-            infowindow.open(map, markersById[t.id]);
-          }
-          document.querySelector("#map").scrollIntoView({ behavior: "smooth" });
-        });
-        actions.append(view);
-
-        if (t.status !== "resolved") {
-          const chat = el("a", "btn outline", "Open Chat");
-          chat.href = "chat.html?request=" + encodeURIComponent(t.id);
-          actions.append(chat);
-
-          const action = el("button", "btn primary", buttonText[t.status]);
-          action.addEventListener("click", async () => {
-            action.disabled = true;
-            try {
-              await api.updateStatus(t.id, nextStatus[t.status]);
-              await load();
-            } catch (err) {
-              document.querySelector("#error-message").textContent = err.message;
-              action.disabled = false;
-            }
-          });
-          actions.append(action);
+        actions.append(el("span", "tag " + statusClass(r.status), r.status));
+        if (r.latitude != null) {
+          const view = el("button", "btn outline", "View location");
+          view.addEventListener("click", () => focusOn(r));
+          actions.append(view);
         }
-
         card.append(info, actions);
-        return card;
+        return { card, actions };
       }
 
-      // ----- Draw everything (cards, markers, counters) -----
+      // Run an action, then reload. Show any error.
+      function run(button, work) {
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          errorBox.textContent = "";
+          try { await work(); await load(); }
+          catch (err) { errorBox.textContent = err.message; button.disabled = false; }
+        });
+      }
+
       function render() {
-        const list = document.querySelector("#task-list");
-        list.innerHTML = "";
-        clearMarkers();
+        const availableList = document.querySelector("#available-list");
+        const taskList = document.querySelector("#task-list");
+        availableList.innerHTML = "";
+        taskList.innerHTML = "";
+        markers.forEach((m) => m.setMap(null));
+        markers = [];
+        markersById = {};
 
-        const shown = tasks
-          .filter((t) => currentFilter === "all" || t.status === currentFilter)
-          .sort((a, b) => currentSort === "newest" ? b.createdAt - a.createdAt : rank[a.urgency] - rank[b.urgency]);
+        if (available.length === 0) availableList.append(el("p", "empty", "No requests are waiting right now."));
+        available.forEach((r) => {
+          const { card, actions } = baseCard(r);
+          const accept = el("button", "btn primary", "Accept");
+          run(accept, () => api.acceptRequest(r.id));
+          actions.append(accept);
+          availableList.append(card);
+        });
 
-        if (shown.length === 0) list.append(el("p", "empty", "No tasks here yet."));
+        if (tasks.length === 0) taskList.append(el("p", "empty", "You haven't accepted any requests yet."));
+        tasks.forEach((t) => {
+          const { card, actions } = baseCard(t);
+          if (t.status === "Assigned" || t.status === "In Progress") {
+            const chat = el("a", "btn outline", "Open Chat");
+            chat.href = "chat.html?request=" + encodeURIComponent(t.id);    // chat page comes later
+            actions.append(chat);
 
-        shown.forEach((t) => {
-          list.append(makeCard(t));
-          if (t.latitude != null) {
-            const marker = new google.maps.Marker({
-              position: { lat: t.latitude, lng: t.longitude },
-              map: map,
-              title: typeLabel(t.type),
-            });
-            activeMarkers.push(marker);
-            markersById[t.id] = marker;
+            const next = t.status === "Assigned" ? "In Progress" : "Resolved";
+            const action = el("button", "btn primary", t.status === "Assigned" ? "Start task" : "Mark resolved");
+            run(action, () => api.updateTaskStatus(t.assignmentId, next));
+            actions.append(action);
           }
+          taskList.append(card);
         });
 
-        ["assigned", "inprogress", "resolved"].forEach((status) => {
-          document.querySelector("#count-" + status).textContent = tasks.filter((t) => t.status === status).length;
+        // map markers for everything shown
+        if (map) [...available, ...tasks].forEach((r) => {
+          if (r.latitude == null) return;
+          const marker = new google.maps.Marker({
+            position: { lat: r.latitude, lng: r.longitude },
+            map: map,
+            title: r.category + " (" + r.status + ")",
+          });
+          marker.addListener("click", () => showInfo(marker));
+          markers.push(marker);
+          markersById[r.id] = marker;
         });
+
+        document.querySelector("#count-available").textContent = available.length;
+        document.querySelector("#count-active").textContent = tasks.filter((t) => t.status === "Assigned" || t.status === "In Progress").length;
+        document.querySelector("#count-resolved").textContent = tasks.filter((t) => t.status === "Resolved").length;
       }
 
       async function load() {
         try {
-          tasks = await api.getMyTasks();
+          [available, tasks] = await Promise.all([api.getAvailableRequests(), api.getMyTasks()]);
+          await mapReady;
           render();
         } catch (err) {
-          document.querySelector("#error-message").textContent = err.message;
+          errorBox.textContent = err.message;
         }
       }
 
-      // ----- Tabs -----
-      function setupTabs(id, onPick) {
-        const tabs = document.querySelectorAll("#" + id + " .tab");
-        tabs.forEach((tab) => tab.addEventListener("click", () => {
-          tabs.forEach((x) => x.classList.remove("active"));
-          tab.classList.add("active");
-          onPick(tab);
-          render();
-        }));
-      }
-      setupTabs("filter-tabs", (tab) => { currentFilter = tab.dataset.filter; });
-      setupTabs("sort-tabs", (tab) => { currentSort = tab.dataset.sort; });
+      if (me) load().then(() => {
+        if (!map) return;
+        const bounds = new google.maps.LatLngBounds();
+        let count = 0;
+        [...available, ...tasks].forEach((r) => {
+          if (r.latitude != null) { bounds.extend({ lat: r.latitude, lng: r.longitude }); count++; }
+        });
+        if (count > 0) {
+          map.fitBounds(bounds, 40);
+          // don't zoom in too far when there is only one point
+          google.maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 14) map.setZoom(14); });
+        }
+      });
     </script>
   </body>
 </html>
