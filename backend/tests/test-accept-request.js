@@ -1,12 +1,31 @@
 
+require("dotenv").config();
+
 const { getToken, api } = require("./test-helper");
 
 (async () => {
   try {
-    const token = await getToken();
+    // Login using VOLUNTEER credentials
+    const token = await getToken(
+      process.env.VOLUNTEER_EMAIL,
+      process.env.VOLUNTEER_PASSWORD
+    );
 
-    const requestId = "200cf501-34cb-4127-a69b-fb4d607bcabe";
+    // Verify role
+    const me = await api("/api/me", { token });
 
+    console.log("User role:", me.body?.data?.role);
+
+    if (
+      me.status !== 200 ||
+      me.body?.data?.role !== "volunteer"
+    ) {
+      throw new Error("Volunteer authentication failed");
+    }
+
+    const requestId = "6013222a-f133-478c-a611-00290259b127";
+
+    // Accept request
     const result = await api(
       `/api/volunteer/requests/${requestId}/accept`,
       {
@@ -22,6 +41,7 @@ const { getToken, api } = require("./test-helper");
       return;
     }
 
+    // Check assignments
     const assignments = await api(
       "/api/volunteer/assignments/my",
       { token }
@@ -31,10 +51,13 @@ const { getToken, api } = require("./test-helper");
 
     if (assignments.status !== 200) {
       process.exitCode = 1;
+      return;
     }
 
-  } catch (e) {
-    console.error(e.message);
+    console.log("[PASS] Volunteer acceptance workflow completed!");
+
+  } catch (error) {
+    console.error("[FAIL]", error.message);
     process.exitCode = 1;
   }
 })();

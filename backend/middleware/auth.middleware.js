@@ -1,6 +1,4 @@
-
 const { createClient } = require("@supabase/supabase-js");
-
 const authMiddleware = async (req, res, next) => {
   try {
     // 1. Check Authorization header
@@ -12,7 +10,6 @@ const authMiddleware = async (req, res, next) => {
         error: "Authentication token required"
       });
     }
-
     const token = header.slice(7).trim();
 
     if (!token) {

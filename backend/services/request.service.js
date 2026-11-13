@@ -7,9 +7,9 @@ const {
 
 const { notify } = require("./notification.service");
 
-// =====================================
-// DATABASE ERROR HANDLER
-// =====================================
+// ======================================
+// COMMON ERROR HANDLER
+// ======================================
 
 const dbError = (error, fallback) => {
   const err = new Error(error?.message || fallback);
@@ -17,16 +17,16 @@ const dbError = (error, fallback) => {
   throw err;
 };
 
-// =====================================
-// CREATE REQUEST
+// ======================================
+// CREATE HELP REQUEST
 // RESIDENT
-// =====================================
+// ======================================
 
 const createRequest = async (db, residentId, body) => {
   const errors = validateCreateRequest(body || {});
 
   if (errors.length) {
-    const err = new Error(errors.join("; "));
+    const err = new Error(errors.join(", "));
     err.status = 400;
     throw err;
   }
@@ -36,13 +36,9 @@ const createRequest = async (db, residentId, body) => {
     category: body.category,
     description: body.description.trim(),
     latitude:
-      body.latitude === undefined
-        ? null
-        : Number(body.latitude),
+      body.latitude === undefined ? null : Number(body.latitude),
     longitude:
-      body.longitude === undefined
-        ? null
-        : Number(body.longitude)
+      body.longitude === undefined ? null : Number(body.longitude)
   };
 
   const { data, error } = await db
@@ -67,13 +63,12 @@ const createRequest = async (db, residentId, body) => {
   return data;
 };
 
-// =====================================
+// ======================================
 // GET RESIDENT REQUESTS
-// RESIDENT
-// =====================================
+// ======================================
 
 const getResidentRequests = async (db, residentId) => {
-  const { data, error } = await db
+  const { data: requests, error } = await db
     .from("help_requests")
     .select("*")
     .eq("resident_id", residentId)
@@ -83,12 +78,83 @@ const getResidentRequests = async (db, residentId) => {
     dbError(error, "Could not fetch your requests");
   }
 
-  return data || [];
+  if (!requests || requests.length === 0) {
+    return [];
+  }
+
+  const requestIds = requests.map(request => request.id);
+
+  const { data: assignments, error: assignmentError } = await db
+    .from("assignments")
+    .select("request_id, volunteer_id")
+    .in("request_id", requestIds);
+
+  if (assignmentError) {
+    dbError(
+      assignmentError,
+      "Could not fetch request assignments"
+    );
+  }
+
+  const assignmentMap = new Map();
+
+  for (const assignment of assignments || []) {
+    assignmentMap.set(
+      assignment.request_id,
+      assignment.volunteer_id
+    );
+  }
+
+  const volunteerIds = [
+    ...new Set(
+      (assignments || []).map(a => a.volunteer_id)
+    )
+  ];
+
+  let volunteerMap = new Map();
+
+  if (volunteerIds.length > 0) {
+    const { data: volunteers, error: volunteerError } = await db
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", volunteerIds);
+
+    if (volunteerError) {
+      dbError(
+        volunteerError,
+        "Could not fetch volunteer profiles"
+      );
+    }
+
+    volunteerMap = new Map(
+      (volunteers || []).map(volunteer => [
+        volunteer.id,
+        volunteer
+      ])
+    );
+  }
+
+  return requests.map(request => {
+    const volunteerId = assignmentMap.get(request.id);
+    const volunteer = volunteerId
+      ? volunteerMap.get(volunteerId)
+      : null;
+
+    return {
+      ...request,
+      assigned_volunteer: volunteer
+        ? {
+            id: volunteer.id,
+            name: volunteer.full_name
+          }
+        : null
+    };
+  });
 };
 
-// =====================================
+// ======================================
 // GET REQUEST BY ID
-// =====================================
+// ======================================
 
 const getRequestById = async (db, requestId) => {
   if (!isUuid(requestId)) {
@@ -116,10 +182,10 @@ const getRequestById = async (db, requestId) => {
   return data;
 };
 
-// =====================================
+// ======================================
 // GET AVAILABLE REQUESTS
 // VOLUNTEER
-// =====================================
+// ======================================
 
 const getAvailableRequests = async (db) => {
   const { data, error } = await db
@@ -129,16 +195,67 @@ const getAvailableRequests = async (db) => {
     .order("created_at", { ascending: true });
 
   if (error) {
-    dbError(error, "Could not fetch pending requests");
+    dbError(error, "Could not fetch available requests");
   }
 
   return data || [];
 };
 
-// =====================================
+// ======================================
+// ACCEPT REQUEST
+// VOLUNTEER
+// ATOMIC DATABASE OPERATION
+// ======================================
+
+const acceptRequest = async (db, requestId) => {
+  if (!isUuid(requestId)) {
+    const err = new Error("Invalid request ID");
+    err.status = 400;
+    throw err;
+  }
+
+  const { data, error } = await db.rpc(
+    "accept_help_request",
+    {
+      p_request_id: requestId
+    }
+  );
+
+  if (error) {
+    const err = new Error(
+      error.message || "Could not accept request"
+    );
+
+    err.status =
+      error.code === "42501" ? 403 :
+      error.code === "28000" ? 401 :
+      400;
+
+    throw err;
+  }
+
+  if (!data) {
+    const err = new Error("Assignment was not created");
+    err.status = 500;
+    throw err;
+  }
+
+  await notify({
+    userId: data.volunteer_id,
+    type: "request_accepted",
+    message: "You have successfully accepted a help request",
+    metadata: {
+      requestId: data.request_id,
+      assignmentId: data.id
+    }
+  });
+
+  return data;
+};
+
+// ======================================
 // UPDATE REQUEST STATUS
-// RESIDENT / VOLUNTEER / ADMIN
-// =====================================
+// ======================================
 
 const updateRequestStatus = async (
   db,
@@ -146,60 +263,51 @@ const updateRequestStatus = async (
   status,
   actor
 ) => {
-
-  // 1. Validate request ID
-
   if (!isUuid(requestId)) {
     const err = new Error("Invalid request ID");
     err.status = 400;
     throw err;
   }
 
-  // 2. Validate requested status
+  const statusErrors = validateStatus(status);
 
-  if (!validateStatus(status)) {
-    const err = new Error("Invalid request status");
+  if (statusErrors && statusErrors.length) {
+    const err = new Error(
+      Array.isArray(statusErrors)
+        ? statusErrors.join(", ")
+        : "Invalid status"
+    );
+
     err.status = 400;
     throw err;
   }
 
-  // 3. Validate authenticated user
-
   if (!actor || !actor.id || !actor.role) {
-    const err = new Error("Unauthorized");
+    const err = new Error("Invalid user");
     err.status = 401;
     throw err;
   }
 
-  // 4. Fetch existing request
+  const currentRequest = await getRequestById(db, requestId);
+  const currentStatus = currentRequest.status;
 
-  const current = await getRequestById(db, requestId);
-
-  // =====================================
-  // RESIDENT OWNERSHIP CHECK
-  // =====================================
-
+  // Residents can only cancel their own pending requests
   if (actor.role === "resident") {
-
-    // Resident can only access own request
-
-    if (current.resident_id !== actor.id) {
+    if (currentRequest.resident_id !== actor.id) {
       const err = new Error(
-        "You can only cancel your own requests"
+        "You cannot update this request"
       );
 
       err.status = 403;
       throw err;
     }
 
-    // Resident can only cancel Pending requests
-
     if (
-      current.status !== "Pending" ||
+      currentStatus !== "Pending" ||
       status !== "Cancelled"
     ) {
       const err = new Error(
-        "Residents can only cancel their own Pending requests"
+        "Residents can only cancel pending requests"
       );
 
       err.status = 403;
@@ -207,28 +315,17 @@ const updateRequestStatus = async (
     }
   }
 
-  // =====================================
-  // ROLE-BASED STATUS TRANSITIONS
-  // =====================================
-
-  const allowed = {
-
+  // Allowed status transitions
+  const transitions = {
     resident: {
-      Pending: ["Cancelled"],
-      Verified: [],
-      Assigned: [],
-      "In Progress": [],
-      Resolved: [],
-      Cancelled: []
+      Pending: ["Cancelled"]
     },
 
     volunteer: {
       Pending: ["In Progress", "Resolved"],
       Verified: ["In Progress", "Resolved"],
       Assigned: ["In Progress", "Resolved"],
-      "In Progress": ["Resolved"],
-      Resolved: [],
-      Cancelled: []
+      "In Progress": ["Resolved"]
     },
 
     admin: {
@@ -251,71 +348,53 @@ const updateRequestStatus = async (
       ],
 
       "In Progress": ["Resolved"],
-      Resolved: ["Pending"],
-      Cancelled: []
+      Resolved: ["Pending"]
     }
   };
 
-  const permittedTransitions =
-    allowed[actor.role]?.[current.status] || [];
+  const allowedTransitions =
+    transitions[actor.role]?.[currentStatus] || [];
 
-  if (!permittedTransitions.includes(status)) {
+  if (!allowedTransitions.includes(status)) {
     const err = new Error(
-      `Status transition from "${current.status}" to "${status}" is not allowed for ${actor.role}`
+      `Cannot change status from ${currentStatus} to ${status}`
     );
 
-    err.status = 403;
+    err.status = 400;
     throw err;
   }
 
-  // =====================================
-  // UPDATE REQUEST
-  // PRESERVE SUPABASE RLS
-  // =====================================
-
-  let updateQuery = db
+  let query = db
     .from("help_requests")
     .update({
       status,
       updated_at: new Date().toISOString()
     })
-    .eq("id", requestId)
-    .eq("status", current.status);
-
-  // Additional protection for resident cancellation
+    .eq("id", requestId);
 
   if (actor.role === "resident") {
-    updateQuery = updateQuery
-      .eq("resident_id", actor.id)
-      .eq("status", "Pending");
+    query = query.eq("resident_id", actor.id);
   }
 
-  const { data, error } = await updateQuery
+  const { data, error } = await query
     .select("*")
     .maybeSingle();
 
   if (error) {
-    dbError(
-      error,
-      "Could not update request status. Check help_requests UPDATE RLS policy."
-    );
+    dbError(error, "Could not update request status");
   }
 
   if (!data) {
     const err = new Error(
-      "Request could not be updated. It may have changed or RLS may have blocked the operation."
+      "Request could not be updated"
     );
 
-    err.status = 403;
+    err.status = 404;
     throw err;
   }
 
-  // =====================================
-  // SEND NOTIFICATION
-  // =====================================
-
   await notify({
-    userId: current.resident_id,
+    userId: currentRequest.resident_id,
     type: "request_status_updated",
     message: `Your request status is now ${status}`,
     metadata: {
@@ -327,14 +406,15 @@ const updateRequestStatus = async (
   return data;
 };
 
-// =====================================
-// EXPORT SERVICES
-// =====================================
+// ======================================
+// EXPORT FUNCTIONS
+// ======================================
 
 module.exports = {
   createRequest,
   getResidentRequests,
   getRequestById,
   getAvailableRequests,
+  acceptRequest,
   updateRequestStatus
 };

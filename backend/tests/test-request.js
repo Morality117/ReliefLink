@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 
 const { createClient } = require("@supabase/supabase-js");
@@ -28,16 +27,18 @@ async function testRequest() {
     console.log("Logged in user ID:", data.user.id);
     console.log("Login successful!");
 
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
     // =====================================
     // 2. CREATE REQUEST
     // =====================================
 
     const response = await fetch(`${BASE_URL}/api/requests`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify({
         category: "Food",
         description: "Test help request from API",
@@ -48,7 +49,7 @@ async function testRequest() {
 
     console.log("Create request:", response.status, result);
 
-    if (response.status !== 201) {
+    if (response.status !== 201 || !result.data?.id) {
       throw new Error("Request creation failed");
     }
 
@@ -65,9 +66,7 @@ async function testRequest() {
       `${BASE_URL}/api/requests/${requestId}`,
       {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
       }
     );
 
@@ -96,9 +95,7 @@ async function testRequest() {
       `${BASE_URL}/api/requests/my`,
       {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
       }
     );
 
@@ -110,7 +107,11 @@ async function testRequest() {
       throw new Error("Failed to fetch my requests");
     }
 
-    const foundRequest = myResult.data?.some(
+    if (!Array.isArray(myResult.data)) {
+      throw new Error("My requests response is not an array");
+    }
+
+    const foundRequest = myResult.data.find(
       (request) => request.id === requestId
     );
 
@@ -119,6 +120,46 @@ async function testRequest() {
     }
 
     console.log("My requests verification successful!");
+
+    // =====================================
+    // 5. VERIFY ASSIGNED VOLUNTEER FIELD
+    // =====================================
+
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        foundRequest,
+        "assigned_volunteer"
+      )
+    ) {
+      throw new Error(
+        "assigned_volunteer field is missing from API response"
+      );
+    }
+
+    const volunteer = foundRequest.assigned_volunteer;
+
+    if (volunteer === null) {
+      console.log(
+        "Assigned volunteer: null (request is currently unassigned)"
+      );
+    } else {
+      if (
+        typeof volunteer !== "object" ||
+        !volunteer.id ||
+        !volunteer.name
+      ) {
+        throw new Error(
+          "Assigned volunteer details are incomplete"
+        );
+      }
+
+      console.log("Assigned volunteer details:", {
+        id: volunteer.id,
+        name: volunteer.name,
+      });
+    }
+
+    console.log("Assigned volunteer field verification: PASS");
 
     // =====================================
     // FINAL RESULT
@@ -131,6 +172,7 @@ async function testRequest() {
     console.log("2. Create Request: PASS");
     console.log("3. Request Details: PASS");
     console.log("4. My Requests: PASS");
+    console.log("5. Assigned Volunteer Field: PASS");
     console.log("=================================");
 
   } catch (error) {

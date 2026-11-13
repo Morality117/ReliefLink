@@ -15,8 +15,17 @@
     "test:workflow": "node tests/test-workflow.js"
   },
   "dependencies": {
+    "@nexconn/server-sdk": "github:NexconnAI-Dev/nexconn-server-sdk-node#v0.1.2",
     "@supabase/supabase-js": "^2.118.0",
+    "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^5.3.0"
+  },
+  "allowScripts": {
+    "github:NexconnAI-Dev/nexconn-server-sdk-node#06acc1a48583761e93247c55d5c60d3d46338b0e": true
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.5.4"
   }
 }
