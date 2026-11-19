@@ -55,8 +55,8 @@ CORS_ORIGIN=
 ALLOW_VERCEL_ORIGINS=false
 ADMIN_CONTACT_EMAIL=
 
-## Team
+### Team
 * **Debangan Chakraborty** – Lead Frontend, UI/UX, Nexconn ChatUI Integration & Deployment
 * **Subhayu Chatterjee** – Backend API, Supabase Database/RLS & Nexconn Server SDK
-* **Anwesan Chatterjee** – Frontend Support
+* **Anwesan Mukkherjee** – Frontend Support
 * **Sourati Ghosh** – UI & Workflow Testing
