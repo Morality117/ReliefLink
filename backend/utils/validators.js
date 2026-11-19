@@ -1,4 +1,3 @@
-
 const CATEGORIES = [
   "Rescue",
   "Food",
@@ -55,18 +54,17 @@ const validateCreateRequest = body => {
 
   const lat = body.latitude;
   const lng = body.longitude;
+  const hasLat = lat !== undefined && lat !== null && lat !== "";
+  const hasLng = lng !== undefined && lng !== null && lng !== "";
 
-  if (
-    (lat === undefined) !==
-    (lng === undefined)
-  ) {
+  if (hasLat !== hasLng) {
     errors.push(
       "latitude and longitude must be provided together"
     );
   }
 
   if (
-    lat !== undefined &&
+    hasLat &&
     (!Number.isFinite(Number(lat)) ||
       Number(lat) < -90 ||
       Number(lat) > 90)
@@ -77,7 +75,7 @@ const validateCreateRequest = body => {
   }
 
   if (
-    lng !== undefined &&
+    hasLng &&
     (!Number.isFinite(Number(lng)) ||
       Number(lng) < -180 ||
       Number(lng) > 180)

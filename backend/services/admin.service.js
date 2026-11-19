@@ -1,4 +1,3 @@
-
 const { createClient } = require("@supabase/supabase-js");
 
 // =====================================
@@ -34,8 +33,6 @@ const createVolunteer = async ({
 }) => {
   const adminSupabase = createAdminClient();
 
-  // 1. Create Auth user
-
   const { data: authData, error: authError } =
     await adminSupabase.auth.admin.createUser({
       email,
@@ -56,8 +53,6 @@ const createVolunteer = async ({
 
   const userId = authData.user.id;
 
-  // 2. Create profile
-
   const { data: profile, error: profileError } =
     await adminSupabase
       .from("profiles")
@@ -73,35 +68,48 @@ const createVolunteer = async ({
       .select("id, full_name, phone, role")
       .single();
 
-  // 3. Rollback if profile creation fails
-
   if (profileError) {
     await adminSupabase.auth.admin.deleteUser(userId);
-
-    const error = new Error(
-      `Profile creation failed: ${profileError.message}`
-    );
-
+    const error = new Error(`Profile creation failed: ${profileError.message}`);
     error.status = 500;
     throw error;
   }
 
-  // Return profile with Auth email
+  const { error: volunteerProfileError } =
+    await adminSupabase
+      .from("volunteer_profiles")
+      .upsert(
+        {
+          user_id: userId,
+          skills: [],
+          available: true
+        },
+        { onConflict: "user_id" }
+      );
+
+  if (volunteerProfileError) {
+    await adminSupabase.from("profiles").delete().eq("id", userId);
+    await adminSupabase.auth.admin.deleteUser(userId);
+    const error = new Error(
+      `Volunteer profile creation failed: ${volunteerProfileError.message}`
+    );
+    error.status = 500;
+    throw error;
+  }
 
   return {
     ...profile,
-    email: authData.user.email
+    email: authData.user.email,
+    available: true
   };
 };
 
 // =====================================
-// GET ALL USERS WITH AUTH EMAIL
+// GET ALL USERS WITH AUTH EMAIL & AVAILABILITY
 // =====================================
 
 const getAllUsers = async () => {
   const adminSupabase = createAdminClient();
-
-  // 1. Fetch profiles
 
   const { data: profiles, error: profileError } =
     await adminSupabase
@@ -113,56 +121,58 @@ const getAllUsers = async () => {
     throw profileError;
   }
 
-  // 2. Fetch Auth users (paginated)
+  const { data: volunteerProfiles } = await adminSupabase
+    .from("volunteer_profiles")
+    .select("user_id, available, skills");
+
+  const volMap = new Map(
+    (volunteerProfiles || []).map((v) => [v.user_id, v])
+  );
 
   const authUsers = [];
   const perPage = 1000;
   let page = 1;
 
   while (true) {
-    const { data, error } =
-      await adminSupabase.auth.admin.listUsers({
-        page,
-        perPage
-      });
+    const { data, error } = await adminSupabase.auth.admin.listUsers({
+      page,
+      perPage
+    });
 
     if (error) {
       throw error;
     }
 
     const currentUsers = data.users || [];
-
     authUsers.push(...currentUsers);
 
     if (currentUsers.length < perPage) {
       break;
     }
-
     page++;
   }
 
-  // 3. Map Auth email to profile using UUID
-
   const emailMap = new Map(
-    authUsers.map(user => [
-      user.id,
-      user.email || null
-    ])
+    authUsers.map((user) => [user.id, user.email || null])
   );
 
-  // 4. Return merged users
-
-  return (profiles || []).map(profile => ({
-    ...profile,
-    email: emailMap.get(profile.id) || null
-  }));
+  return (profiles || []).map((profile) => {
+    const vp = volMap.get(profile.id);
+    return {
+      ...profile,
+      email: emailMap.get(profile.id) || null,
+      ...(profile.role === "volunteer"
+        ? {
+            available: vp ? Boolean(vp.available) : false,
+            skills: vp?.skills || []
+          }
+        : {})
+    };
+  });
 };
-
-// =====================================
-// EXPORT
-// =====================================
 
 module.exports = {
   createVolunteer,
-  getAllUsers
+  getAllUsers,
+  createAdminClient
 };

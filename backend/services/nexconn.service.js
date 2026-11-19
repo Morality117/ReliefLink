@@ -1,114 +1,109 @@
+const crypto = require("crypto");
 
-const {
-  Configuration,
-  UserManagementApi
-} = require("@nexconn/server-sdk");
+const toNexconnUserId = (supabaseId) => {
+  // Nexconn user IDs are mapped to alphanumeric IDs.
+  return "rl" + String(supabaseId).replace(/-/g, "");
+};
 
-let userManagementApi = null;
+const fromNexconnUserId = (nexconnId) => {
+  const raw = String(nexconnId || "").trim();
+  if (!/^rl[0-9a-f]{32}$/i.test(raw)) return null;
+  const h = raw.slice(2).toLowerCase();
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
 
-const getNexconnClient = () => {
-  if (userManagementApi) {
-    return userManagementApi;
-  }
-
+const issueToken = async (user) => {
   const appKey = process.env.NEXCONN_APP_KEY;
   const appSecret = process.env.NEXCONN_APP_SECRET;
 
-  const primaryDomain = process.env.NEXCONN_PRIMARY_API_DOMAIN;
-  const secondaryDomain = process.env.NEXCONN_SECONDARY_API_DOMAIN;
-
   if (!appKey || !appSecret) {
-    throw new Error("Nexconn credentials are not configured");
-  }
-
-  if (!primaryDomain || !secondaryDomain) {
-    const error = new Error(
-      "Nexconn API domains are not configured"
-    );
-    error.statusCode = 503;
+    const error = new Error("Nexconn credentials are missing");
+    error.status = 503;
     throw error;
   }
 
-  const configuration = new Configuration();
+  const primary = process.env.NEXCONN_PRIMARY_API_DOMAIN;
+  const secondary = process.env.NEXCONN_SECONDARY_API_DOMAIN;
 
-  // Configure Nexconn application credentials
-  configuration.setNexconnCredentials(
-    appKey,
-    appSecret
-  );
-
-  // Configure primary and backup API domains
-  configuration.setPrimaryBackupDomains(
-    primaryDomain,
-    secondaryDomain
-  );
-
-  // Initialize Nexconn User Management API
-  userManagementApi = new UserManagementApi(configuration);
-
-  return userManagementApi;
-};
-
-
-const issueChatAccessToken = async ({
-  userId,
-  name,
-  avatarUrl
-}) => {
-  try {
-    // Validate authenticated user
-    if (!userId) {
-      throw new Error("User ID is required");
-    }
-
-    if (!name) {
-      throw new Error("User name is required");
-    }
-
-    // Initialize Nexconn SDK
-    const nexconnClient = getNexconnClient();
-
-    // Prepare token request
-    const tokenRequest = {
-      userId: String(userId),
-      name: String(name)
-    };
-
-    // Avatar is optional
-    if (avatarUrl) {
-      tokenRequest.avatarUrl = avatarUrl;
-    }
-
-    // Issue access token through official Nexconn SDK
-    const { data } = await nexconnClient.issueAccessToken(
-      tokenRequest
+  const domains = [primary, secondary]
+    .filter(Boolean)
+    .map(domain =>
+      domain.startsWith("http")
+        ? domain.replace(/\/+$/, "")
+        : `https://${domain}`
     );
 
-    // Validate SDK response
-    if (!data?.result?.accessToken) {
-      throw new Error(
-        "Nexconn did not return a valid access token"
+  if (!domains.length) {
+    const error = new Error("Nexconn API domains are missing");
+    error.status = 503;
+    throw error;
+  }
+
+  const nonce = crypto.randomBytes(9).toString("hex");
+  const timestamp = Date.now().toString();
+
+  const signature = crypto
+    .createHash("sha1")
+    .update(appSecret + nonce + timestamp)
+    .digest("hex");
+
+  const userId = toNexconnUserId(user.id);
+
+  const payload = {
+    userId,
+    name: user.name || user.email || "ReliefLink User",
+    avatarUrl: ""
+  };
+
+  let lastError;
+
+  for (const domain of domains) {
+    try {
+      const response = await fetch(
+        `${domain}/v4/auth/access-token/issue`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "App-Key": appKey,
+            "Nonce": nonce,
+            "Timestamp": timestamp,
+            "Signature": signature
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000)
+        }
       );
+
+      const result = await response.json();
+
+      if (!response.ok || result.code !== 0) {
+        throw new Error(
+          result.message || `Nexconn returned HTTP ${response.status}, code ${result.code}`
+        );
+      }
+
+      if (!result.result?.accessToken) {
+        throw new Error("Nexconn did not return an access token");
+      }
+
+      return {
+        userId,
+        token: result.result.accessToken,
+        appKey
+      };
+
+    } catch (error) {
+      lastError = error;
+      console.error("Nexconn domain failed:", domain, error.message);
     }
-
-    console.log(
-      "Nexconn chat access token issued successfully"
-    );
-
-    return data;
-
-  } catch (error) {
-    console.error(
-      "Nexconn service error:",
-      error.message
-    );
-
-    throw error;
   }
+
+  const error = new Error(
+    lastError?.message || "Unable to obtain Nexconn token"
+  );
+  error.status = 502;
+  throw error;
 };
 
-
-// Export service functions
-module.exports = {
-  issueChatAccessToken
-};
+module.exports = { issueToken, toNexconnUserId, fromNexconnUserId };

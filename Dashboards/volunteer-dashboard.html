@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Volunteer Dashboard</title>
+    <title>Volunteer Dashboard – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
   </head>
   <body>
@@ -12,6 +12,8 @@
       <div class="brand">Relief<span>Link</span></div>
       <div class="user-area">
         <span id="user-name"></span>
+        <a href="#" id="open-profile-btn">Profile</a>
+        <a href="chat.html">Messages <span class="nav-badge" id="chat-unread-badge" hidden>0</span></a>
         <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
       </div>
     </div>
@@ -20,7 +22,7 @@
 
       <div class="hero">
         <h1>People who need help</h1>
-        <p>Accept a request to take it on, then keep its status up to date.</p>
+        <p>Accept an open request to take it on, coordinate via chat, and keep its status up to date.</p>
       </div>
 
       <div class="stats">
@@ -32,21 +34,124 @@
       <div id="map"></div>
       <p class="error" id="error-message"></p>
 
-      <h2>Available Requests</h2>
-      <div id="available-list"></div>
+      <div class="section-bar">
+        <button class="section-toggle" id="toggle-available" type="button" aria-expanded="true" aria-controls="available-section">
+          <span class="chevron">▼</span>
+          <span>Available Requests</span>
+          <span class="section-count" id="badge-available">0</span>
+        </button>
+        <div class="section-controls">
+          <span class="live-pill">Live updates active</span>
+          <button class="btn outline sm" id="refresh-btn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="collapsible-body" id="available-section">
+        <div id="available-list"><p class="empty">Loading available requests...</p></div>
+        <div class="show-more-wrap" id="available-more-wrap" hidden>
+          <button class="btn outline sm" id="available-more-btn" type="button"></button>
+        </div>
+      </div>
 
-      <h2>My Tasks</h2>
-      <div id="task-list"></div>
+      <div class="section-bar">
+        <button class="section-toggle" id="toggle-tasks" type="button" aria-expanded="true" aria-controls="tasks-section">
+          <span class="chevron">▼</span>
+          <span>My Tasks</span>
+          <span class="section-count" id="badge-tasks">0</span>
+        </button>
+      </div>
+      <div class="collapsible-body" id="tasks-section">
+        <div id="task-list"><p class="empty">Loading your tasks...</p></div>
+        <div class="show-more-wrap" id="tasks-more-wrap" hidden>
+          <button class="btn outline sm" id="tasks-more-btn" type="button"></button>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- Volunteer Profile Summary & Edit Modal -->
+    <div class="modal-backdrop" id="profile-modal">
+      <div class="modal">
+        <h3>Volunteer Profile</h3>
+        <p class="hint" id="profile-subtitle">Your volunteer summary, availability, and skills.</p>
+        <div class="profile-avatar-row">
+          <div class="profile-avatar-preview" id="prof-avatar-preview">V</div>
+          <div class="profile-avatar-actions">
+            <label class="btn outline sm" style="cursor:pointer;">
+              Upload Photo
+              <input id="prof-avatar-input" type="file" accept="image/*" hidden>
+            </label>
+            <button type="button" class="btn outline sm" id="prof-avatar-remove">Remove</button>
+          </div>
+        </div>
+        <div id="profile-summary-box" style="background:#f4f7fd;border:1px solid #d5dcea;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+          <p style="margin:0 0 6px;"><strong>Name:</strong> <span id="prof-name">—</span></p>
+          <p style="margin:0 0 6px;"><strong>Email:</strong> <span id="prof-email">—</span></p>
+          <p style="margin:0 0 6px;"><strong>Status:</strong> <span class="tag" id="prof-avail-badge">Available</span></p>
+          <p style="margin:0;"><strong>Tasks:</strong> <span id="prof-stats">0 active · 0 resolved · 0 total</span></p>
+        </div>
+        <form id="profile-form">
+          <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:4px;">Full Name</label>
+          <input id="prof-input-name" type="text" required>
+          <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:4px;">Phone Number</label>
+          <input id="prof-input-phone" type="tel" placeholder="Phone number">
+          <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:4px;">Skills (comma-separated)</label>
+          <input id="prof-input-skills" type="text" placeholder="e.g. First Aid, Rescue, Logistics">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9rem;margin:6px 0 12px;cursor:pointer;">
+            <input id="prof-input-available" type="checkbox" style="width:auto;margin:0;">
+            Available for new assignments
+          </label>
+          <p class="error" id="profile-message"></p>
+          <button type="submit" class="btn primary" style="width:100%;">Save Profile</button>
+          <button type="button" class="btn outline" id="profile-close" style="width:100%;margin-top:8px;">Close</button>
+          <hr style="border:none;border-top:1px solid #e2e9f5;margin:16px 0 12px;">
+          <button type="button" class="btn outline" id="delete-account-btn" style="width:100%;color:#b81f2f;border-color:#f3c4c9;">Delete My Account</button>
+        </form>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
-    <script>
+    <script type="module">
+      import { initDashboardNotifications } from "./notifications.js";
+
       const me = requireRole("volunteer");
       const errorBox = document.querySelector("#error-message");
+      const refreshBtn = document.querySelector("#refresh-btn");
 
       let available = [];
       let tasks = [];
+      let mapFitted = false;
+      let showAllAvailable = false;
+      let showAllTasks = false;
+      const PREVIEW_LIMIT = 5;
+
+      function setupCollapsible(btnId, bodyId, storageKey) {
+        const btn = document.querySelector(btnId);
+        const body = document.querySelector(bodyId);
+        const saved = localStorage.getItem(storageKey);
+        if (saved === "collapsed") {
+          btn.setAttribute("aria-expanded", "false");
+          body.hidden = true;
+        }
+        btn.addEventListener("click", () => {
+          const expanded = btn.getAttribute("aria-expanded") === "true";
+          btn.setAttribute("aria-expanded", String(!expanded));
+          body.hidden = expanded;
+          localStorage.setItem(storageKey, expanded ? "collapsed" : "open");
+        });
+      }
+
+      setupCollapsible("#toggle-available", "#available-section", "rl_vol_avail_state");
+      setupCollapsible("#toggle-tasks", "#tasks-section", "rl_vol_tasks_state");
+
+      document.querySelector("#available-more-btn").addEventListener("click", () => {
+        showAllAvailable = !showAllAvailable;
+        render();
+      });
+      document.querySelector("#tasks-more-btn").addEventListener("click", () => {
+        showAllTasks = !showAllTasks;
+        render();
+      });
 
       // ----- Map (Google Maps) -----
       let map = null;
@@ -70,7 +175,7 @@
       })();
 
       function showInfo(marker) {
-        infoWindow.setContent(el("div", null, marker.getTitle()));   // el() = safe text, not HTML
+        infoWindow.setContent(el("div", null, marker.getTitle()));
         infoWindow.open(map, marker);
       }
 
@@ -82,18 +187,20 @@
         document.querySelector("#map").scrollIntoView({ behavior: "smooth" });
       }
 
-      // The part every card has: title, text, status, and "View location"
       function baseCard(r) {
         const card = el("div", "card");
         const info = el("div");
         info.append(el("h3", null, r.category));
+        if (r.residentName) {
+          info.append(el("p", "citizen-name", "Citizen: " + r.residentName));
+        }
         if (r.description) info.append(el("p", null, r.description));
-        info.append(el("p", null, "Requested " + timeAgo(r.createdAt)));
+        info.append(el("p", "meta-line", "Requested " + timeAgo(r.createdAt)));
 
         const actions = el("div", "card-actions");
         actions.append(el("span", "tag " + statusClass(r.status), r.status));
         if (r.latitude != null) {
-          const view = el("button", "btn outline", "View location");
+          const view = el("button", "btn outline sm", "View location");
           view.addEventListener("click", () => focusOn(r));
           actions.append(view);
         }
@@ -101,91 +208,288 @@
         return { card, actions };
       }
 
-      // Run an action, then reload. Show any error.
-      function run(button, work) {
+      function run(button, loadingLabel, work) {
+        const original = button.textContent;
         button.addEventListener("click", async () => {
           button.disabled = true;
+          button.textContent = loadingLabel;
           errorBox.textContent = "";
-          try { await work(); await load(); }
-          catch (err) { errorBox.textContent = err.message; button.disabled = false; }
+          try {
+            await work();
+            await load();
+          } catch (err) {
+            errorBox.textContent = err.message;
+            button.disabled = false;
+            button.textContent = original;
+          }
         });
       }
 
       function render() {
         const availableList = document.querySelector("#available-list");
         const taskList = document.querySelector("#task-list");
+        const availMoreWrap = document.querySelector("#available-more-wrap");
+        const availMoreBtn = document.querySelector("#available-more-btn");
+        const tasksMoreWrap = document.querySelector("#tasks-more-wrap");
+        const tasksMoreBtn = document.querySelector("#tasks-more-btn");
+
         availableList.innerHTML = "";
         taskList.innerHTML = "";
         markers.forEach((m) => m.setMap(null));
         markers = [];
         markersById = {};
 
-        if (available.length === 0) availableList.append(el("p", "empty", "No requests are waiting right now."));
-        available.forEach((r) => {
-          const { card, actions } = baseCard(r);
-          const accept = el("button", "btn primary", "Accept");
-          run(accept, () => api.acceptRequest(r.id));
-          actions.append(accept);
-          availableList.append(card);
-        });
+        document.querySelector("#badge-available").textContent = available.length;
+        document.querySelector("#badge-tasks").textContent = tasks.length;
 
-        if (tasks.length === 0) taskList.append(el("p", "empty", "You haven't accepted any requests yet."));
-        tasks.forEach((t) => {
-          const { card, actions } = baseCard(t);
-          if (t.status === "Assigned" || t.status === "In Progress") {
-            const chat = el("a", "btn outline", "Open Chat");
-            chat.href = "chat.html?request=" + encodeURIComponent(t.id);    // chat page comes later
-            actions.append(chat);
-
-            const next = t.status === "Assigned" ? "In Progress" : "Resolved";
-            const action = el("button", "btn primary", t.status === "Assigned" ? "Start task" : "Mark resolved");
-            run(action, () => api.updateTaskStatus(t.assignmentId, next));
-            actions.append(action);
-          }
-          taskList.append(card);
-        });
-
-        // map markers for everything shown
-        if (map) [...available, ...tasks].forEach((r) => {
-          if (r.latitude == null) return;
-          const marker = new google.maps.Marker({
-            position: { lat: r.latitude, lng: r.longitude },
-            map: map,
-            title: r.category + " (" + r.status + ")",
+        if (available.length === 0) {
+          availableList.append(el("p", "empty", "No requests are waiting right now."));
+          availMoreWrap.hidden = true;
+        } else {
+          const visibleAvail = showAllAvailable ? available : available.slice(0, PREVIEW_LIMIT);
+          visibleAvail.forEach((r) => {
+            const { card, actions } = baseCard(r);
+            const accept = el("button", "btn primary sm", "Accept");
+            run(accept, "Accepting...", () => api.acceptRequest(r.id));
+            actions.append(accept);
+            availableList.append(card);
           });
-          marker.addListener("click", () => showInfo(marker));
-          markers.push(marker);
-          markersById[r.id] = marker;
-        });
+          if (available.length > PREVIEW_LIMIT) {
+            availMoreWrap.hidden = false;
+            availMoreBtn.textContent = showAllAvailable
+              ? "Show fewer"
+              : `Show all ${available.length} available requests`;
+          } else {
+            availMoreWrap.hidden = true;
+          }
+        }
+
+        if (tasks.length === 0) {
+          taskList.append(el("p", "empty", "You haven't accepted or been assigned any requests yet."));
+          tasksMoreWrap.hidden = true;
+        } else {
+          const visibleTasks = showAllTasks ? tasks : tasks.slice(0, PREVIEW_LIMIT);
+          visibleTasks.forEach((t) => {
+            const { card, actions } = baseCard(t);
+            if (t.status === "Assigned" || t.status === "In Progress") {
+              const chat = el("a", "btn outline sm", "Open Chat");
+              chat.href =
+                "chat.html?with=" + encodeURIComponent(t.residentId) +
+                "&request=" + encodeURIComponent(t.id) +
+                "&withName=" + encodeURIComponent(t.residentName || "Citizen");
+              actions.append(chat);
+
+              const next = t.status === "Assigned" ? "In Progress" : "Resolved";
+              const action = el(
+                "button",
+                "btn primary sm",
+                t.status === "Assigned" ? "Start task" : "Mark resolved"
+              );
+              run(action, "Updating...", () => api.updateTaskStatus(t.assignmentId, next));
+              actions.append(action);
+            }
+            taskList.append(card);
+          });
+          if (tasks.length > PREVIEW_LIMIT) {
+            tasksMoreWrap.hidden = false;
+            tasksMoreBtn.textContent = showAllTasks
+              ? "Show fewer"
+              : `Show all ${tasks.length} tasks`;
+          } else {
+            tasksMoreWrap.hidden = true;
+          }
+        }
+
+        if (map) {
+          [...available, ...tasks].forEach((r) => {
+            if (r.latitude == null) return;
+            const who = r.residentName ? ` — ${r.residentName}` : "";
+            const marker = new google.maps.Marker({
+              position: { lat: r.latitude, lng: r.longitude },
+              map: map,
+              title: `${r.category}${who} (${r.status})`,
+            });
+            marker.addListener("click", () => showInfo(marker));
+            markers.push(marker);
+            markersById[r.id] = marker;
+          });
+        }
 
         document.querySelector("#count-available").textContent = available.length;
-        document.querySelector("#count-active").textContent = tasks.filter((t) => t.status === "Assigned" || t.status === "In Progress").length;
-        document.querySelector("#count-resolved").textContent = tasks.filter((t) => t.status === "Resolved").length;
+        document.querySelector("#count-active").textContent = tasks.filter(
+          (t) => t.status === "Assigned" || t.status === "In Progress"
+        ).length;
+        document.querySelector("#count-resolved").textContent = tasks.filter(
+          (t) => t.status === "Resolved"
+        ).length;
       }
 
       async function load() {
         try {
-          [available, tasks] = await Promise.all([api.getAvailableRequests(), api.getMyTasks()]);
+          [available, tasks] = await Promise.all([
+            api.getAvailableRequests(),
+            api.getMyTasks(),
+          ]);
           await mapReady;
           render();
+
+          if (map && !mapFitted) {
+            const bounds = new google.maps.LatLngBounds();
+            let count = 0;
+            [...available, ...tasks].forEach((r) => {
+              if (r.latitude != null) {
+                bounds.extend({ lat: r.latitude, lng: r.longitude });
+                count++;
+              }
+            });
+            if (count > 0) {
+              map.fitBounds(bounds, 40);
+              google.maps.event.addListenerOnce(map, "idle", () => {
+                if (map.getZoom() > 14) map.setZoom(14);
+              });
+              mapFitted = true;
+            }
+          }
         } catch (err) {
           errorBox.textContent = err.message;
         }
       }
 
-      if (me) load().then(() => {
-        if (!map) return;
-        const bounds = new google.maps.LatLngBounds();
-        let count = 0;
-        [...available, ...tasks].forEach((r) => {
-          if (r.latitude != null) { bounds.extend({ lat: r.latitude, lng: r.longitude }); count++; }
-        });
-        if (count > 0) {
-          map.fitBounds(bounds, 40);
-          // don't zoom in too far when there is only one point
-          google.maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 14) map.setZoom(14); });
+      refreshBtn.addEventListener("click", async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Refreshing...";
+        await load();
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh";
+      });
+
+
+      const profileModal = document.querySelector("#profile-modal");
+      let currentAvatarUrl = "";
+
+      function renderProfAvatar(url, name) {
+        const box = document.querySelector("#prof-avatar-preview");
+        box.innerHTML = "";
+        if (url) {
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = name || "Avatar";
+          box.appendChild(img);
+        } else {
+          box.textContent = (name || "V").trim().charAt(0).toUpperCase();
+        }
+      }
+
+      document.querySelector("#prof-avatar-input").addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        try {
+          currentAvatarUrl = await resizeAvatarFile(file, 160);
+          renderProfAvatar(currentAvatarUrl, document.querySelector("#prof-input-name").value);
+        } catch (err) {
+          profileMsg.textContent = err.message;
         }
       });
+
+      document.querySelector("#prof-avatar-remove").addEventListener("click", () => {
+        currentAvatarUrl = "";
+        document.querySelector("#prof-avatar-input").value = "";
+        renderProfAvatar("", document.querySelector("#prof-input-name").value);
+      });
+      const profileMsg = document.querySelector("#profile-message");
+      const profileForm = document.querySelector("#profile-form");
+
+      function populateProfile(p) {
+        document.querySelector("#prof-name").textContent = p.full_name || "Volunteer";
+        document.querySelector("#prof-email").textContent = p.email || "—";
+        const badge = document.querySelector("#prof-avail-badge");
+        badge.textContent = p.available ? "Available" : "Unavailable";
+        badge.className = "tag " + (p.available ? "resolved" : "cancelled");
+        const st = p.stats || { active: 0, resolved: 0, total: 0 };
+        document.querySelector("#prof-stats").textContent =
+          st.active + " active · " + st.resolved + " resolved · " + st.total + " total";
+
+        document.querySelector("#prof-input-name").value = p.full_name || "";
+        document.querySelector("#prof-input-phone").value = p.phone || "";
+        document.querySelector("#prof-input-skills").value = (p.skills || []).join(", ");
+        document.querySelector("#prof-input-available").checked = p.available !== false;
+        currentAvatarUrl = p.avatar_url || "";
+        renderProfAvatar(currentAvatarUrl, p.full_name);
+      }
+
+      document.querySelector("#open-profile-btn").addEventListener("click", async (e) => {
+        e.preventDefault();
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        profileModal.style.display = "flex";
+        try {
+          const p = await api.getVolunteerProfile();
+          populateProfile(p);
+        } catch (err) {
+          profileMsg.textContent = err.message;
+        }
+      });
+
+      document.querySelector("#delete-account-btn").addEventListener("click", async () => {
+        if (!confirm("Permanently delete your ReliefLink account? This cannot be undone.")) return;
+        const btn = document.querySelector("#delete-account-btn");
+        btn.disabled = true;
+        btn.textContent = "Deleting...";
+        try {
+          await api.deleteAccount();
+          window.location.href = "../Homepage/index.html";
+        } catch (err) {
+          profileMsg.className = "error";
+          profileMsg.textContent = err.message;
+          btn.disabled = false;
+          btn.textContent = "Delete My Account";
+        }
+      });
+
+      document.querySelector("#profile-close").addEventListener("click", () => {
+        profileModal.style.display = "none";
+      });
+
+      profileForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        const btn = profileForm.querySelector("button[type='submit']");
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+        try {
+          const skillsArr = document.querySelector("#prof-input-skills").value
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const updated = await api.updateVolunteerProfile({
+            full_name: document.querySelector("#prof-input-name").value.trim(),
+            phone: document.querySelector("#prof-input-phone").value.trim(),
+            skills: skillsArr,
+            available: document.querySelector("#prof-input-available").checked,
+            avatar_url: currentAvatarUrl,
+          });
+          populateProfile(updated);
+          document.querySelector("#user-name").textContent = updated.full_name;
+          profileMsg.className = "error ok-text";
+          profileMsg.textContent = "Profile updated!";
+        } catch (err) {
+          profileMsg.textContent = err.message;
+        }
+        btn.disabled = false;
+        btn.textContent = "Save Profile";
+      });
+
+      if (me) {
+        load();
+        initDashboardNotifications();
+
+        setInterval(() => {
+          if (document.visibilityState === "visible") load();
+        }, 15000);
+      }
     </script>
   </body>
 </html>

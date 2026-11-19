@@ -1,0 +1,26 @@
+{
+  "name": "relieflink-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@nexconn/chat": "latest",
+    "@nexconn/chatui": "latest",
+    "@nexconn/engine": "latest",
+    "@supabase/supabase-js": "^2.118.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "lit": "^3.3.2"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

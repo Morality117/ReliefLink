@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Citizen Dashboard</title>
+    <title>Citizen Dashboard – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
   </head>
   <body>
@@ -12,6 +12,8 @@
       <div class="brand">Relief<span>Link</span></div>
       <div class="user-area">
         <span id="user-name"></span>
+        <a href="#" id="open-profile-btn">Profile</a>
+        <a href="chat.html">Messages <span class="nav-badge" id="chat-unread-badge" hidden>0</span></a>
         <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
       </div>
     </div>
@@ -20,7 +22,7 @@
 
       <div class="hero">
         <h1>Need help?</h1>
-        <p>Send a request and nearby volunteers will respond.</p>
+        <p>Send a request with your location and nearby volunteers will respond.</p>
         <a class="big-btn" href="request.html">Request Help</a>
       </div>
 
@@ -30,12 +32,27 @@
         <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
       </div>
 
-      <h2>My Requests</h2>
+      <div class="section-bar">
+        <button class="section-toggle" id="toggle-requests" type="button" aria-expanded="true" aria-controls="requests-section">
+          <span class="chevron">▼</span>
+          <span>My Requests</span>
+          <span class="section-count" id="badge-requests">0</span>
+        </button>
+        <div class="section-controls">
+          <span class="live-pill" id="live-status">Live updates active</span>
+          <button class="btn outline sm" id="refresh-btn" type="button">Refresh</button>
+        </div>
+      </div>
       <p class="error" id="error-message"></p>
-      <div id="request-list"></div>
+      <div class="collapsible-body" id="requests-section">
+        <div id="request-list"><p class="empty">Loading your requests...</p></div>
+        <div class="show-more-wrap" id="requests-more-wrap" hidden>
+          <button class="btn outline sm" id="requests-more-btn" type="button"></button>
+        </div>
+      </div>
 
       <div class="helplines">
-        <h3>In immediate danger? Call:</h3>
+        <h3>In immediate danger? Call emergency services first:</h3>
         <div class="helpline-list">
           <a href="tel:112"><strong>112</strong>Emergency</a>
           <a href="tel:108"><strong>108</strong>Ambulance</a>
@@ -45,34 +62,115 @@
         </div>
       </div>
 
+
     </div>
 
+    
+    <!-- Citizen Profile & Activity Summary Modal -->
+    <div class="modal-backdrop" id="profile-modal">
+      <div class="modal">
+        <h3>My Profile &amp; Activity</h3>
+        <p class="hint">Manage your profile photo, contact details, and view your request summary.</p>
+        <div class="profile-avatar-row">
+          <div class="profile-avatar-preview" id="prof-avatar-preview">C</div>
+          <div class="profile-avatar-actions">
+            <label class="btn outline sm" style="cursor:pointer;">
+              Upload Photo
+              <input id="prof-avatar-input" type="file" accept="image/*" hidden>
+            </label>
+            <button type="button" class="btn outline sm" id="prof-avatar-remove">Remove</button>
+          </div>
+        </div>
+        <div style="background:#f4f7fd;border:1px solid #d5dcea;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+          <p style="margin:0 0 6px;"><strong>Name:</strong> <span id="prof-name">—</span></p>
+          <p style="margin:0 0 6px;"><strong>Email:</strong> <span id="prof-email">—</span></p>
+          <p style="margin:0;"><strong>Activity:</strong> <span id="prof-stats">0 total · 0 active · 0 resolved · 0 cancelled</span></p>
+        </div>
+        <form id="profile-form">
+          <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:4px;">Full Name</label>
+          <input id="prof-input-name" type="text" required>
+          <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:4px;">Phone Number</label>
+          <input id="prof-input-phone" type="tel" placeholder="Phone number">
+          <p class="error" id="profile-message"></p>
+          <button type="submit" class="btn primary" style="width:100%;">Save Profile</button>
+          <button type="button" class="btn outline" id="profile-close" style="width:100%;margin-top:8px;">Close</button>
+          <hr style="border:none;border-top:1px solid #e2e9f5;margin:16px 0 12px;">
+          <button type="button" class="btn outline" id="delete-account-btn" style="width:100%;color:#b81f2f;border-color:#f3c4c9;">Delete My Account</button>
+        </form>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
-    <script>
-      const me = requireRole("citizen");
+    <script type="module">
+      import { initDashboardNotifications } from "./notifications.js";
 
-      // What the citizen sees for each status
-      const citizenLabels = {
-        unassigned: "Waiting for a volunteer",
-        assigned: "Volunteer assigned",
-        inprogress: "In progress",
-        resolved: "Resolved",
-      };
+      const me = requireRole("resident");
+      const errorBox = document.querySelector("#error-message");
+      const refreshBtn = document.querySelector("#refresh-btn");
+      let requests = [];
+      let showAll = false;
+      const PREVIEW_LIMIT = 5;
 
-      // Build one request card from one request object
+      const toggleBtn = document.querySelector("#toggle-requests");
+      const sectionBody = document.querySelector("#requests-section");
+      if (localStorage.getItem("rl_cit_req_state") === "collapsed") {
+        toggleBtn.setAttribute("aria-expanded", "false");
+        sectionBody.hidden = true;
+      }
+      toggleBtn.addEventListener("click", () => {
+        const expanded = toggleBtn.getAttribute("aria-expanded") === "true";
+        toggleBtn.setAttribute("aria-expanded", String(!expanded));
+        sectionBody.hidden = expanded;
+        localStorage.setItem("rl_cit_req_state", expanded ? "collapsed" : "open");
+      });
+
+      document.querySelector("#requests-more-btn").addEventListener("click", () => {
+        showAll = !showAll;
+        render();
+      });
+
       function makeCard(r) {
         const card = el("div", "card");
 
         const info = el("div");
-        info.append(el("h3", null, typeLabel(r.type)));
-        info.append(el("p", null, peopleText(r.people) + " · Requested " + timeAgo(r.createdAt)));
-        if (r.volunteerName) info.append(el("p", "assigned-to", "Volunteer: " + r.volunteerName));
+        info.append(el("h3", null, r.category));
+        if (r.description) info.append(el("p", null, r.description));
+        info.append(el("p", "meta-line", "Requested " + timeAgo(r.createdAt)));
+
+        if (r.volunteerName) {
+          info.append(el("p", "assigned-to", "Assigned Volunteer: " + r.volunteerName));
+        } else if (r.status === "Pending" || r.status === "Verified") {
+          info.append(el("p", "unassigned-note", "Awaiting volunteer assignment"));
+        }
 
         const actions = el("div", "card-actions");
-        actions.append(el("span", "tag " + r.status, citizenLabels[r.status]));
-        if (r.volunteerId && r.status !== "resolved") {
-          const chat = el("a", "btn primary", "Open Chat");
-          chat.href = "chat.html?request=" + encodeURIComponent(r.id);   // chat page comes later
+        actions.append(el("span", "tag " + statusClass(r.status), r.status));
+
+        if (r.status === "Pending") {
+          const cancel = el("button", "btn outline sm", "Cancel request");
+          cancel.addEventListener("click", async () => {
+            if (!confirm("Cancel this request?")) return;
+            cancel.disabled = true;
+            cancel.textContent = "Cancelling...";
+            try {
+              await api.cancelRequest(r.id);
+              await load();
+            } catch (err) {
+              errorBox.textContent = err.message;
+              cancel.disabled = false;
+              cancel.textContent = "Cancel request";
+            }
+          });
+          actions.append(cancel);
+        }
+
+        if ((r.status === "Assigned" || r.status === "In Progress") && r.volunteerId) {
+          const chat = el("a", "btn primary sm", "Open Chat");
+          chat.href =
+            "chat.html?with=" + encodeURIComponent(r.volunteerId) +
+            "&request=" + encodeURIComponent(r.id) +
+            "&withName=" + encodeURIComponent(r.volunteerName || "Volunteer");
           actions.append(chat);
         }
 
@@ -80,25 +178,165 @@
         return card;
       }
 
-      async function load() {
+      function render() {
         const list = document.querySelector("#request-list");
-        try {
-          const requests = await api.getMyRequests();
-          list.innerHTML = "";                       // clear (safe: no user text here)
-          if (requests.length === 0) {
-            list.append(el("p", "empty", "You haven't made any requests yet."));
-          }
-          requests.forEach((r) => list.append(makeCard(r)));
+        const moreWrap = document.querySelector("#requests-more-wrap");
+        const moreBtn = document.querySelector("#requests-more-btn");
 
-          document.querySelector("#count-total").textContent = requests.length;
-          document.querySelector("#count-active").textContent = requests.filter((r) => r.status !== "resolved").length;
-          document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "resolved").length;
+        document.querySelector("#badge-requests").textContent = requests.length;
+        list.innerHTML = "";
+        if (requests.length === 0) {
+          list.append(el("p", "empty", "You haven't made any requests yet. Click 'Request Help' above when you need assistance."));
+          moreWrap.hidden = true;
+        } else {
+          const visible = showAll ? requests : requests.slice(0, PREVIEW_LIMIT);
+          visible.forEach((r) => list.append(makeCard(r)));
+          if (requests.length > PREVIEW_LIMIT) {
+            moreWrap.hidden = false;
+            moreBtn.textContent = showAll ? "Show fewer" : `Show all ${requests.length} requests`;
+          } else {
+            moreWrap.hidden = true;
+          }
+        }
+
+        const done = (r) => r.status === "Resolved" || r.status === "Cancelled";
+        document.querySelector("#count-total").textContent = requests.length;
+        document.querySelector("#count-active").textContent = requests.filter((r) => !done(r)).length;
+        document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "Resolved").length;
+      }
+
+      async function load() {
+        errorBox.textContent = "";
+        try {
+          requests = await api.getMyRequests();
+          render();
         } catch (err) {
-          document.querySelector("#error-message").textContent = err.message;
+          errorBox.textContent = err.message;
         }
       }
 
-      if (me) load();
+      refreshBtn.addEventListener("click", async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Refreshing...";
+        await load();
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh";
+      });
+
+
+      const profileModal = document.querySelector("#profile-modal");
+      const profileMsg = document.querySelector("#profile-message");
+      const profileForm = document.querySelector("#profile-form");
+      let currentAvatarUrl = "";
+
+      function renderProfAvatar(url, name) {
+        const box = document.querySelector("#prof-avatar-preview");
+        box.innerHTML = "";
+        if (url) {
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = name || "Avatar";
+          box.appendChild(img);
+        } else {
+          box.textContent = (name || "C").trim().charAt(0).toUpperCase();
+        }
+      }
+
+      function populateProfile(p) {
+        document.querySelector("#prof-name").textContent = p.full_name || "Citizen";
+        document.querySelector("#prof-email").textContent = p.email || "—";
+        const st = p.stats || { total: 0, active: 0, resolved: 0, cancelled: 0 };
+        document.querySelector("#prof-stats").textContent =
+          st.total + " total · " + st.active + " active · " + st.resolved + " resolved · " + st.cancelled + " cancelled";
+        document.querySelector("#prof-input-name").value = p.full_name || "";
+        document.querySelector("#prof-input-phone").value = p.phone || "";
+        currentAvatarUrl = p.avatar_url || "";
+        renderProfAvatar(currentAvatarUrl, p.full_name);
+      }
+
+      document.querySelector("#open-profile-btn").addEventListener("click", async (e) => {
+        e.preventDefault();
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        profileModal.style.display = "flex";
+        try {
+          const p = await api.getResidentProfile();
+          populateProfile(p);
+        } catch (err) {
+          profileMsg.textContent = err.message;
+        }
+      });
+
+      document.querySelector("#profile-close").addEventListener("click", () => {
+        profileModal.style.display = "none";
+      });
+
+      document.querySelector("#prof-avatar-input").addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        try {
+          currentAvatarUrl = await resizeAvatarFile(file, 160);
+          renderProfAvatar(currentAvatarUrl, document.querySelector("#prof-input-name").value);
+        } catch (err) {
+          profileMsg.textContent = err.message;
+        }
+      });
+
+      document.querySelector("#prof-avatar-remove").addEventListener("click", () => {
+        currentAvatarUrl = "";
+        document.querySelector("#prof-avatar-input").value = "";
+        renderProfAvatar("", document.querySelector("#prof-input-name").value);
+      });
+
+      profileForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        profileMsg.className = "error";
+        profileMsg.textContent = "";
+        const btn = profileForm.querySelector("button[type='submit']");
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+        try {
+          const updated = await api.updateResidentProfile({
+            full_name: document.querySelector("#prof-input-name").value.trim(),
+            phone: document.querySelector("#prof-input-phone").value.trim(),
+            avatar_url: currentAvatarUrl,
+          });
+          populateProfile(updated);
+          document.querySelector("#user-name").textContent = updated.full_name;
+          profileMsg.className = "error ok-text";
+          profileMsg.textContent = "Profile updated!";
+        } catch (err) {
+          profileMsg.textContent = err.message;
+        }
+        btn.disabled = false;
+        btn.textContent = "Save Profile";
+      });
+
+      document.querySelector("#delete-account-btn").addEventListener("click", async () => {
+        if (!confirm("Permanently delete your ReliefLink account and your requests? This cannot be undone.")) return;
+        const btn = document.querySelector("#delete-account-btn");
+        btn.disabled = true;
+        btn.textContent = "Deleting...";
+        try {
+          await api.deleteAccount();
+          window.location.href = "../Homepage/index.html";
+        } catch (err) {
+          errorBox.textContent = err.message;
+          btn.disabled = false;
+          btn.textContent = "Delete My Account";
+        }
+      });
+
+      if (me) {
+        load();
+        initDashboardNotifications();
+
+        setInterval(() => {
+          if (document.visibilityState === "visible") load();
+        }, 12000);
+      }
     </script>
   </body>
 </html>

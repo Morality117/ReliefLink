@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Request Help</title>
+    <title>Request Help – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
   </head>
   <body>
@@ -12,6 +12,7 @@
       <div class="brand">Relief<span>Link</span></div>
       <div class="user-area">
         <span id="user-name"></span>
+        <a href="chat.html">Messages <span class="nav-badge" id="chat-unread-badge" hidden>0</span></a>
         <a id="logout" href="../LoginSignupPage/login.html">Log out</a>
       </div>
     </div>
@@ -35,7 +36,7 @@
         <label class="title" for="people">How many people need help?</label>
         <input id="people" name="people" type="number" min="1" value="1" required>
 
-                <label class="title" for="description">Describe the situation</label>
+        <label class="title" for="description">Describe the situation</label>
         <textarea id="description" name="description" required placeholder="For example: water level is rising, two elderly people on the second floor"></textarea>
 
         <label class="title" for="location">Your location</label>
@@ -46,28 +47,27 @@
         <p class="hint" id="location-hint"></p>
         <p class="hint" id="coords"></p>
 
-        <!-- Tap the map or drag the pin to set the exact spot -->
         <p class="hint">Or tap the map to drop a pin. You can drag the pin to adjust it.</p>
         <div id="map"></div>
 
-        <p class="error" id="error-message" style="color:#d62839;"></p>
+        <p class="error" id="error-message"></p>
         <button type="submit" class="btn primary">Send Request</button>
       </form>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
-    <script>
-      // The chosen location (filled in by GPS or by tapping the map)
+    <script type="module">
+      import { initDashboardNotifications } from "./notifications.js";
+
       let latitude = null;
       let longitude = null;
-      let accuracy = null;      // metres; stays null when the user places the pin by hand
+      let accuracy = null;
 
       const hint = document.querySelector("#location-hint");
       const coords = document.querySelector("#coords");
       const box = document.querySelector("#location");
 
-      // ----- Map (Google Maps) -----
       let map = null;
       let marker = null;
 
@@ -79,25 +79,22 @@
           return;
         }
         map = new google.maps.Map(document.querySelector("#map"), {
-          center: { lat: 22.5726, lng: 88.3639 },   // starting view: change to your area
+          center: { lat: 22.5726, lng: 88.3639 },
           zoom: 11,
           mapTypeControl: false,
           streetViewControl: false,
         });
-        // Tapping the map drops the pin there
         map.addListener("click", (e) => setLocation(e.latLng.lat(), e.latLng.lng(), null));
-        if (latitude !== null) placeMarker(latitude, longitude);   // in case the GPS answered first
+        if (latitude !== null) placeMarker(latitude, longitude);
       }
 
-      // Put the pin on the map (or move it if it's already there)
       function placeMarker(lat, lng) {
         if (!map) return;
-        const position = { lat: lat, lng: lng };
+        const position = { lat, lng };
         if (marker) {
           marker.setPosition(position);
         } else {
-          marker = new google.maps.Marker({ position: position, map: map, draggable: true });
-          // when the user finishes dragging the pin, use the new spot
+          marker = new google.maps.Marker({ position, map, draggable: true });
           marker.addListener("dragend", () => {
             const p = marker.getPosition();
             setLocation(p.lat(), p.lng(), null);
@@ -105,43 +102,52 @@
         }
       }
 
-      // One function that handles a new location, wherever it came from
       async function setLocation(lat, lng, acc) {
         latitude = lat;
         longitude = lng;
         accuracy = acc;
         placeMarker(lat, lng);
 
-        // Show the coordinates straight away
-        coords.innerHTML =
+        coords.textContent = "";
+        coords.append(
           "Coordinates: " + lat.toFixed(5) + ", " + lng.toFixed(5) +
-          (acc ? " (accurate to about " + acc + " m)" : " (pinned on the map)") + " · " +
-          '<a href="https://www.google.com/maps?q=' + lat + ',' + lng +
-          '" target="_blank">Check on map</a>';
+          (acc ? " (accurate to about " + acc + " m)" : " (pinned on the map)") + " · "
+        );
+        const link = el("a", null, "Check on map");
+        link.href = "https://www.google.com/maps?q=" + lat + "," + lng;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        coords.append(link);
 
-        // Then look up the address
         hint.textContent = "Finding your address...";
         try {
           const url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng;
           const res = await fetch(url);
           const data = await res.json();
-          box.value = data.display_name;
-          hint.textContent = "Address found. It may not be exact, so please correct it if needed.";
+          if (data && data.display_name) {
+            box.value = data.display_name;
+            hint.textContent = "Address found. It may not be exact, so please correct it if needed.";
+          } else {
+            hint.textContent = "Location pinned. Please type your address or landmark if needed.";
+          }
         } catch (err) {
-          hint.textContent = "Couldn't find the address. Please type it.";
+          hint.textContent = "Couldn't find the address automatically. Please type it.";
         }
       }
 
-      initMap();   // load Google Maps and draw the map
+      initMap();
 
-      // "Use my current location" button
       document.querySelector("#locate-btn").addEventListener("click", () => {
+        if (!navigator.geolocation) {
+          hint.textContent = "Your browser doesn't support GPS location. Tap the map instead.";
+          return;
+        }
         hint.textContent = "Getting your location...";
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            if (map) { map.setCenter({ lat: lat, lng: lng }); map.setZoom(16); }   // zoom the map to the user
+            if (map) { map.setCenter({ lat, lng }); map.setZoom(16); }
             setLocation(lat, lng, Math.round(position.coords.accuracy));
           },
           () => {
@@ -150,17 +156,15 @@
         );
       });
 
-      // Only residents (citizens) may open this page
-      requireRole("resident");
+      const me = requireRole("resident");
+      if (me) initDashboardNotifications();
 
       const errorBox = document.querySelector("#error-message");
 
-      // Form submit: check the location, then send the request
       document.querySelector("#request-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         errorBox.textContent = "";
 
-        // A request without a location can't be shown on the volunteer map
         if (latitude === null) {
           errorBox.textContent = "Please set your location: use the button or tap the map.";
           return;
@@ -168,9 +172,8 @@
 
         const button = e.target.querySelector("button[type='submit']");
         button.disabled = true;
+        button.textContent = "Sending request...";
         try {
-          // The backend stores a category, a description and a position.
-          // So the number of people and the address go into the description text.
           let text = document.querySelector("#description").value.trim();
           const people = Number(document.querySelector("#people").value);
           const address = document.querySelector("#location").value.trim();
@@ -180,13 +183,14 @@
           await api.createRequest({
             category: document.querySelector("#type").value,
             description: text,
-            latitude: latitude,
-            longitude: longitude,
+            latitude,
+            longitude,
           });
           window.location.href = "citizen-dashboard.html";
         } catch (err) {
           errorBox.textContent = err.message;
           button.disabled = false;
+          button.textContent = "Send Request";
         }
       });
     </script>

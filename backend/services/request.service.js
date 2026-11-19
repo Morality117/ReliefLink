@@ -1,4 +1,3 @@
-
 const {
   validateCreateRequest,
   validateStatus,
@@ -6,10 +5,11 @@ const {
 } = require("../utils/validators");
 
 const { notify } = require("./notification.service");
+const { createAdminClient } = require("./admin.service");
 
-// ======================================
-// COMMON ERROR HANDLER
-// ======================================
+// =====================================
+// DATABASE ERROR HANDLER
+// =====================================
 
 const dbError = (error, fallback) => {
   const err = new Error(error?.message || fallback);
@@ -17,28 +17,29 @@ const dbError = (error, fallback) => {
   throw err;
 };
 
-// ======================================
-// CREATE HELP REQUEST
+// =====================================
+// CREATE REQUEST
 // RESIDENT
-// ======================================
+// =====================================
 
 const createRequest = async (db, residentId, body) => {
   const errors = validateCreateRequest(body || {});
 
   if (errors.length) {
-    const err = new Error(errors.join(", "));
+    const err = new Error(errors.join("; "));
     err.status = 400;
     throw err;
   }
+
+  const hasLat = body.latitude !== undefined && body.latitude !== null && body.latitude !== "";
+  const hasLng = body.longitude !== undefined && body.longitude !== null && body.longitude !== "";
 
   const payload = {
     resident_id: residentId,
     category: body.category,
     description: body.description.trim(),
-    latitude:
-      body.latitude === undefined ? null : Number(body.latitude),
-    longitude:
-      body.longitude === undefined ? null : Number(body.longitude)
+    latitude: hasLat ? Number(body.latitude) : null,
+    longitude: hasLng ? Number(body.longitude) : null
   };
 
   const { data, error } = await db
@@ -63,12 +64,13 @@ const createRequest = async (db, residentId, body) => {
   return data;
 };
 
-// ======================================
+// =====================================
 // GET RESIDENT REQUESTS
-// ======================================
+// RESIDENT
+// =====================================
 
 const getResidentRequests = async (db, residentId) => {
-  const { data: requests, error } = await db
+  const { data, error } = await db
     .from("help_requests")
     .select("*")
     .eq("resident_id", residentId)
@@ -78,83 +80,61 @@ const getResidentRequests = async (db, residentId) => {
     dbError(error, "Could not fetch your requests");
   }
 
-  if (!requests || requests.length === 0) {
-    return [];
-  }
+  const requests = data || [];
+  if (!requests.length) return [];
 
-  const requestIds = requests.map(request => request.id);
-
-  const { data: assignments, error: assignmentError } = await db
+  // Fallback: check assignments table for any request missing assigned_volunteer_id
+  const adminDb = createAdminClient();
+  const requestIds = requests.map((r) => r.id);
+  const { data: assignments } = await adminDb
     .from("assignments")
     .select("request_id, volunteer_id")
     .in("request_id", requestIds);
 
-  if (assignmentError) {
-    dbError(
-      assignmentError,
-      "Could not fetch request assignments"
-    );
-  }
-
-  const assignmentMap = new Map();
-
-  for (const assignment of assignments || []) {
-    assignmentMap.set(
-      assignment.request_id,
-      assignment.volunteer_id
-    );
-  }
+  const assignmentVolunteerMap = new Map();
+  (assignments || []).forEach((a) => {
+    if (a.request_id && a.volunteer_id) {
+      assignmentVolunteerMap.set(a.request_id, a.volunteer_id);
+    }
+  });
 
   const volunteerIds = [
     ...new Set(
-      (assignments || []).map(a => a.volunteer_id)
+      requests
+        .map((r) => r.assigned_volunteer_id || assignmentVolunteerMap.get(r.id))
+        .filter(Boolean)
     )
   ];
 
-  let volunteerMap = new Map();
-
-  if (volunteerIds.length > 0) {
-    const { data: volunteers, error: volunteerError } = await db
+  const volunteerNames = {};
+  if (volunteerIds.length) {
+    const { data: profiles } = await adminDb
       .from("profiles")
       .select("id, full_name")
       .in("id", volunteerIds);
 
-    if (volunteerError) {
-      dbError(
-        volunteerError,
-        "Could not fetch volunteer profiles"
-      );
-    }
-
-    volunteerMap = new Map(
-      (volunteers || []).map(volunteer => [
-        volunteer.id,
-        volunteer
-      ])
-    );
+    (profiles || []).forEach((p) => {
+      volunteerNames[p.id] = p.full_name || "Volunteer";
+    });
   }
 
-  return requests.map(request => {
-    const volunteerId = assignmentMap.get(request.id);
-    const volunteer = volunteerId
-      ? volunteerMap.get(volunteerId)
-      : null;
-
+  return requests.map((r) => {
+    const volunteerId = r.assigned_volunteer_id || assignmentVolunteerMap.get(r.id) || null;
+    const volunteerName = volunteerId ? (volunteerNames[volunteerId] || "Volunteer") : null;
     return {
-      ...request,
-      assigned_volunteer: volunteer
-        ? {
-            id: volunteer.id,
-            name: volunteer.full_name
-          }
+      ...r,
+      assigned_volunteer_id: volunteerId,
+      volunteer_name: volunteerName,
+      assigned_volunteer: volunteerId
+        ? { id: volunteerId, name: volunteerName }
         : null
     };
   });
 };
 
-// ======================================
+// =====================================
 // GET REQUEST BY ID
-// ======================================
+// =====================================
 
 const getRequestById = async (db, requestId) => {
   if (!isUuid(requestId)) {
@@ -182,10 +162,10 @@ const getRequestById = async (db, requestId) => {
   return data;
 };
 
-// ======================================
+// =====================================
 // GET AVAILABLE REQUESTS
 // VOLUNTEER
-// ======================================
+// =====================================
 
 const getAvailableRequests = async (db) => {
   const { data, error } = await db
@@ -195,67 +175,36 @@ const getAvailableRequests = async (db) => {
     .order("created_at", { ascending: true });
 
   if (error) {
-    dbError(error, "Could not fetch available requests");
+    dbError(error, "Could not fetch pending requests");
   }
 
-  return data || [];
+  const requests = data || [];
+  if (!requests.length) return [];
+
+  const residentIds = [...new Set(requests.map((r) => r.resident_id).filter(Boolean))];
+  const names = {};
+  if (residentIds.length) {
+    const adminDb = createAdminClient();
+    const { data: profiles } = await adminDb
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", residentIds);
+
+    (profiles || []).forEach((p) => {
+      names[p.id] = p.full_name || "Citizen";
+    });
+  }
+
+  return requests.map((r) => ({
+    ...r,
+    resident_name: names[r.resident_id] || "Citizen"
+  }));
 };
 
-// ======================================
-// ACCEPT REQUEST
-// VOLUNTEER
-// ATOMIC DATABASE OPERATION
-// ======================================
-
-const acceptRequest = async (db, requestId) => {
-  if (!isUuid(requestId)) {
-    const err = new Error("Invalid request ID");
-    err.status = 400;
-    throw err;
-  }
-
-  const { data, error } = await db.rpc(
-    "accept_help_request",
-    {
-      p_request_id: requestId
-    }
-  );
-
-  if (error) {
-    const err = new Error(
-      error.message || "Could not accept request"
-    );
-
-    err.status =
-      error.code === "42501" ? 403 :
-      error.code === "28000" ? 401 :
-      400;
-
-    throw err;
-  }
-
-  if (!data) {
-    const err = new Error("Assignment was not created");
-    err.status = 500;
-    throw err;
-  }
-
-  await notify({
-    userId: data.volunteer_id,
-    type: "request_accepted",
-    message: "You have successfully accepted a help request",
-    metadata: {
-      requestId: data.request_id,
-      assignmentId: data.id
-    }
-  });
-
-  return data;
-};
-
-// ======================================
+// =====================================
 // UPDATE REQUEST STATUS
-// ======================================
+// RESIDENT / VOLUNTEER / ADMIN
+// =====================================
 
 const updateRequestStatus = async (
   db,
@@ -269,132 +218,126 @@ const updateRequestStatus = async (
     throw err;
   }
 
-  const statusErrors = validateStatus(status);
-
-  if (statusErrors && statusErrors.length) {
-    const err = new Error(
-      Array.isArray(statusErrors)
-        ? statusErrors.join(", ")
-        : "Invalid status"
-    );
-
+  if (!validateStatus(status)) {
+    const err = new Error("Invalid request status");
     err.status = 400;
     throw err;
   }
 
   if (!actor || !actor.id || !actor.role) {
-    const err = new Error("Invalid user");
+    const err = new Error("Unauthorized");
     err.status = 401;
     throw err;
   }
 
-  const currentRequest = await getRequestById(db, requestId);
-  const currentStatus = currentRequest.status;
+  const current = await getRequestById(db, requestId);
 
-  // Residents can only cancel their own pending requests
   if (actor.role === "resident") {
-    if (currentRequest.resident_id !== actor.id) {
-      const err = new Error(
-        "You cannot update this request"
-      );
-
+    if (current.resident_id !== actor.id) {
+      const err = new Error("You can only cancel your own requests");
       err.status = 403;
       throw err;
     }
 
-    if (
-      currentStatus !== "Pending" ||
-      status !== "Cancelled"
-    ) {
-      const err = new Error(
-        "Residents can only cancel pending requests"
-      );
-
+    if (current.status !== "Pending" || status !== "Cancelled") {
+      const err = new Error("Residents can only cancel their own Pending requests");
       err.status = 403;
       throw err;
     }
   }
 
-  // Allowed status transitions
-  const transitions = {
-    resident: {
-      Pending: ["Cancelled"]
-    },
+  if (actor.role === "volunteer") {
+    const { data: assignment, error: assignmentError } = await db
+      .from("assignments")
+      .select("id")
+      .eq("request_id", requestId)
+      .eq("volunteer_id", actor.id)
+      .maybeSingle();
 
+    if (assignmentError) {
+      dbError(assignmentError, "Could not verify volunteer assignment");
+    }
+
+    if (!assignment) {
+      const err = new Error("You are not assigned to this request");
+      err.status = 403;
+      throw err;
+    }
+  }
+
+  const allowed = {
+    resident: {
+      Pending: ["Cancelled"],
+      Verified: [],
+      Assigned: [],
+      "In Progress": [],
+      Resolved: [],
+      Cancelled: []
+    },
     volunteer: {
       Pending: ["In Progress", "Resolved"],
       Verified: ["In Progress", "Resolved"],
       Assigned: ["In Progress", "Resolved"],
-      "In Progress": ["Resolved"]
-    },
-
-    admin: {
-      Pending: [
-        "Verified",
-        "Assigned",
-        "In Progress",
-        "Resolved"
-      ],
-
-      Verified: [
-        "Assigned",
-        "In Progress",
-        "Resolved"
-      ],
-
-      Assigned: [
-        "In Progress",
-        "Resolved"
-      ],
-
       "In Progress": ["Resolved"],
-      Resolved: ["Pending"]
+      Resolved: [],
+      Cancelled: []
+    },
+    admin: {
+      Pending: ["Verified", "Assigned", "In Progress", "Resolved", "Cancelled"],
+      Verified: ["Assigned", "In Progress", "Resolved", "Cancelled"],
+      Assigned: ["In Progress", "Resolved", "Cancelled"],
+      "In Progress": ["Resolved", "Cancelled"],
+      Resolved: ["Pending"],
+      Cancelled: []
     }
   };
 
-  const allowedTransitions =
-    transitions[actor.role]?.[currentStatus] || [];
+  const permittedTransitions = allowed[actor.role]?.[current.status] || [];
 
-  if (!allowedTransitions.includes(status)) {
+  if (!permittedTransitions.includes(status)) {
     const err = new Error(
-      `Cannot change status from ${currentStatus} to ${status}`
+      `Status transition from "${current.status}" to "${status}" is not allowed for ${actor.role}`
     );
-
-    err.status = 400;
+    err.status = 403;
     throw err;
   }
 
-  let query = db
+  let updateQuery = db
     .from("help_requests")
     .update({
       status,
       updated_at: new Date().toISOString()
     })
-    .eq("id", requestId);
+    .eq("id", requestId)
+    .eq("status", current.status);
 
   if (actor.role === "resident") {
-    query = query.eq("resident_id", actor.id);
+    updateQuery = updateQuery
+      .eq("resident_id", actor.id)
+      .eq("status", "Pending");
   }
 
-  const { data, error } = await query
+  const { data, error } = await updateQuery
     .select("*")
     .maybeSingle();
 
   if (error) {
-    dbError(error, "Could not update request status");
+    dbError(
+      error,
+      "Could not update request status. Check help_requests UPDATE RLS policy."
+    );
   }
 
   if (!data) {
     const err = new Error(
-      "Request could not be updated"
+      "Request could not be updated. It may have changed or RLS may have blocked the operation."
     );
-
-    err.status = 404;
+    err.status = 403;
     throw err;
   }
 
   await notify({
-    userId: currentRequest.resident_id,
+    userId: current.resident_id,
     type: "request_status_updated",
     message: `Your request status is now ${status}`,
     metadata: {
@@ -406,15 +349,10 @@ const updateRequestStatus = async (
   return data;
 };
 
-// ======================================
-// EXPORT FUNCTIONS
-// ======================================
-
 module.exports = {
   createRequest,
   getResidentRequests,
   getRequestById,
   getAvailableRequests,
-  acceptRequest,
   updateRequestStatus
 };

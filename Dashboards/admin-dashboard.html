@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin Dashboard</title>
+    <title>Admin Dashboard – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
   </head>
   <body>
@@ -19,139 +19,416 @@
     <div class="page">
 
       <div class="hero">
-        <h1>Admin panel</h1>
-        <p>See every help request and assign a volunteer to each one.</p>
+        <h1>Admin coordination panel</h1>
+        <p>Verify incoming requests, assign available volunteers, and manage volunteer accounts.</p>
       </div>
 
       <div class="stats four">
         <div class="stat"><strong id="count-total">0</strong><span>Total requests</span></div>
-        <div class="stat"><strong id="count-unassigned">0</strong><span>Unassigned</span></div>
+        <div class="stat"><strong id="count-pending">0</strong><span>Pending</span></div>
         <div class="stat"><strong id="count-active">0</strong><span>Active</span></div>
         <div class="stat"><strong id="count-resolved">0</strong><span>Resolved</span></div>
       </div>
 
-      <h2>All Requests</h2>
+      <div class="section-bar">
+        <h2>All Requests</h2>
+        <div class="section-controls">
+          <input class="search-input" id="search-input" type="search" placeholder="Search citizen, volunteer, category...">
+          <button class="btn outline sm" id="refresh-btn" type="button">Refresh</button>
+          <button class="btn primary sm" id="add-volunteer-btn" type="button">+ Add volunteer</button>
+        </div>
+      </div>
       <p class="error" id="error-message"></p>
 
       <div class="tabs" id="filter-tabs">
         <button class="tab active" data-filter="all">All</button>
-        <button class="tab" data-filter="unassigned">Unassigned</button>
-        <button class="tab" data-filter="assigned">Assigned</button>
-        <button class="tab" data-filter="inprogress">In progress</button>
-        <button class="tab" data-filter="resolved">Resolved</button>
+        <button class="tab" data-filter="Pending">Pending</button>
+        <button class="tab" data-filter="Verified">Verified</button>
+        <button class="tab" data-filter="Assigned">Assigned</button>
+        <button class="tab" data-filter="In Progress">In Progress</button>
+        <button class="tab" data-filter="Resolved">Resolved</button>
+        <button class="tab" data-filter="Cancelled">Cancelled</button>
       </div>
 
-      <div id="request-list"></div>
+      <div id="request-list"><p class="empty">Loading requests...</p></div>
+
+      <div id="applications-container" style="margin-top:34px;">
+        <div class="section-bar">
+          <button class="section-toggle" id="toggle-apps" type="button" aria-expanded="true" aria-controls="apps-section">
+            <span class="chevron">▼</span>
+            <span>Volunteer Applications</span>
+            <span class="section-count" id="badge-apps">0</span>
+          </button>
+        </div>
+        <div class="collapsible-body" id="apps-section">
+          <div id="applications-list"><p class="empty">No volunteer applications yet.</p></div>
+        </div>
+      </div>
+
     </div>
 
-    <!-- Pop-up: choose a volunteer -->
-    <div class="modal-backdrop" id="modal">
+    <!-- Pop-up 1: choose a volunteer -->
+    <div class="modal-backdrop" id="assign-modal">
       <div class="modal">
         <h3>Assign a volunteer</h3>
-        <p class="hint">Choose who should handle this request.</p>
+        <p class="hint" id="assign-subtitle">Choose an available volunteer to handle this request.</p>
+        <p class="error" id="assign-error"></p>
         <div id="volunteer-list"></div>
-        <button class="btn outline" id="cancel-btn" style="width:100%; margin-top:6px;">Cancel</button>
+        <button class="btn outline" id="assign-cancel" style="width:100%; margin-top:6px;">Cancel</button>
       </div>
     </div>
 
+    <!-- Pop-up 2: add a volunteer account -->
+    <div class="modal-backdrop" id="volunteer-modal">
+      <div class="modal">
+        <h3>Add a volunteer</h3>
+        <p class="hint">They can log in with this email and password straight away.</p>
+        <form id="volunteer-form">
+          <input id="v-name" type="text" placeholder="Full name" required>
+          <input id="v-email" type="email" placeholder="Email address" required>
+          <input id="v-phone" type="tel" placeholder="Phone number" required>
+          <input id="v-password" type="password" placeholder="Password (at least 8 characters)" minlength="8" required>
+          <p class="error" id="volunteer-message"></p>
+          <button type="submit" class="btn primary" style="width:100%;">Create volunteer</button>
+          <button type="button" class="btn outline" id="volunteer-cancel" style="width:100%; margin-top:8px;">Close</button>
+        </form>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
     <script>
       const me = requireRole("admin");
+      const errorBox = document.querySelector("#error-message");
+      const refreshBtn = document.querySelector("#refresh-btn");
+      const searchInput = document.querySelector("#search-input");
 
       let requests = [];
       let volunteers = [];
       let selectedRequest = null;
       let currentFilter = "all";
+      let searchQuery = "";
 
-      // ----- One request card -----
+
+      let applications = [];
+
+      const toggleAppsBtn = document.querySelector("#toggle-apps");
+      const appsBody = document.querySelector("#apps-section");
+      toggleAppsBtn.addEventListener("click", () => {
+        const expanded = toggleAppsBtn.getAttribute("aria-expanded") === "true";
+        toggleAppsBtn.setAttribute("aria-expanded", String(!expanded));
+        appsBody.hidden = expanded;
+      });
+
+      function renderApplications() {
+        const list = document.querySelector("#applications-list");
+        const pendingCount = applications.filter((a) => a.status === "pending").length;
+        document.querySelector("#badge-apps").textContent = pendingCount || applications.length;
+        list.innerHTML = "";
+        if (!applications.length) {
+          list.append(el("p", "empty", "No volunteer applications yet."));
+          return;
+        }
+        applications.forEach((app) => {
+          const card = el("div", "card");
+          const info = el("div");
+          info.append(el("h3", null, app.full_name));
+          info.append(el("p", "meta-line", app.email + " · " + app.phone));
+          if (Array.isArray(app.skills) && app.skills.length) {
+            info.append(el("p", "citizen-name", "Skills: " + app.skills.join(", ")));
+          }
+          if (app.message) info.append(el("p", null, app.message));
+
+          const actions = el("div", "card-actions");
+          const statusTagClass = app.status === "approved" ? "resolved" : app.status === "rejected" ? "cancelled" : "pending";
+          actions.append(el("span", "tag " + statusTagClass, app.status));
+
+          if (app.status === "pending") {
+            const approveBtn = el("button", "btn primary sm", "Approve & Create Account");
+            approveBtn.addEventListener("click", async () => {
+              document.querySelector("#v-name").value = app.full_name || "";
+              document.querySelector("#v-email").value = app.email || "";
+              document.querySelector("#v-phone").value = app.phone || "";
+              volunteerMessage.textContent = "";
+              volunteerMessage.className = "error";
+              volunteerModal.style.display = "flex";
+              try {
+                await api.updateVolunteerApplicationStatus(app.id, "approved");
+                await load();
+              } catch (e) {}
+            });
+
+            const rejectBtn = el("button", "btn outline sm", "Reject");
+            rejectBtn.addEventListener("click", async () => {
+              rejectBtn.disabled = true;
+              try {
+                await api.updateVolunteerApplicationStatus(app.id, "rejected");
+                await load();
+              } catch (err) {
+                errorBox.textContent = err.message;
+                rejectBtn.disabled = false;
+              }
+            });
+            actions.append(approveBtn, rejectBtn);
+          }
+
+          card.append(info, actions);
+          list.append(card);
+        });
+      }
+
       function makeCard(r) {
         const card = el("div", "card");
 
         const info = el("div");
-        const title = el("h3", null, typeLabel(r.type) + " ");
-        if (r.urgency === "high") title.append(el("span", "tag high", "High urgency"));
+        const title = el("h3", null, r.category);
+        if (r.priority === "High" || r.priority === "Critical") {
+          title.append(el("span", "tag high", r.priority + " priority"));
+        }
         info.append(title);
-        info.append(el("p", null, peopleText(r.people) + " · Requested by " + r.residentName + " · " + timeAgo(r.createdAt)));
-        info.append(el("p", "assigned-to", r.volunteerName ? "Assigned to: " + r.volunteerName : "Not assigned yet"));
+        if (r.description) info.append(el("p", null, r.description));
+        info.append(
+          el("p", "meta-line", "Requested by " + (r.residentName || "Citizen") + " · " + timeAgo(r.createdAt))
+        );
+
+        if (r.volunteerName) {
+          info.append(el("p", "assigned-to", "Assigned Volunteer: " + r.volunteerName));
+        } else if (r.status !== "Cancelled") {
+          info.append(el("p", "unassigned-note", "No volunteer assigned yet"));
+        }
 
         const actions = el("div", "card-actions");
-        actions.append(el("span", "tag " + r.status, STATUS_LABELS[r.status]));
-        if (r.status === "unassigned") {
-          const button = el("button", "btn primary", "Assign volunteer");
-          button.addEventListener("click", () => openModal(r));
-          actions.append(button);
+        actions.append(el("span", "tag " + statusClass(r.status), r.status));
+
+        if (r.latitude != null) {
+          const mapLink = el("a", "btn outline sm", "Map");
+          mapLink.href = "https://www.google.com/maps?q=" + r.latitude + "," + r.longitude;
+          mapLink.target = "_blank";
+          mapLink.rel = "noopener noreferrer";
+          actions.append(mapLink);
+        }
+
+        if (r.status === "Pending") {
+          const verify = el("button", "btn outline sm", "Verify");
+          verify.addEventListener("click", async () => {
+            verify.disabled = true;
+            verify.textContent = "Verifying...";
+            errorBox.textContent = "";
+            try {
+              await api.setRequestStatus(r.id, "Verified");
+              await load();
+            } catch (err) {
+              errorBox.textContent = err.message;
+              verify.disabled = false;
+              verify.textContent = "Verify";
+            }
+          });
+          actions.append(verify);
+        }
+
+        if (r.status === "Pending" || r.status === "Verified") {
+          const assign = el("button", "btn primary sm", "Assign volunteer");
+          assign.addEventListener("click", () => openAssign(r));
+          actions.append(assign);
+        }
+
+        if (r.status === "Assigned" || r.status === "In Progress") {
+          const resolve = el("button", "btn outline sm", "Mark resolved");
+          resolve.addEventListener("click", async () => {
+            resolve.disabled = true;
+            resolve.textContent = "Updating...";
+            errorBox.textContent = "";
+            try {
+              await api.setRequestStatus(r.id, "Resolved");
+              await load();
+            } catch (err) {
+              errorBox.textContent = err.message;
+              resolve.disabled = false;
+              resolve.textContent = "Mark resolved";
+            }
+          });
+          actions.append(resolve);
         }
 
         card.append(info, actions);
         return card;
       }
 
-      // ----- Draw cards and counters -----
       function render() {
         const list = document.querySelector("#request-list");
         list.innerHTML = "";
-        const shown = requests.filter((r) => currentFilter === "all" || r.status === currentFilter);
-        if (shown.length === 0) list.append(el("p", "empty", "No requests here."));
-        shown.forEach((r) => list.append(makeCard(r)));
+        const q = searchQuery.trim().toLowerCase();
+        const shown = requests.filter((r) => {
+          const matchesTab = currentFilter === "all" || r.status === currentFilter;
+          if (!matchesTab) return false;
+          if (!q) return true;
+          return [r.category, r.description, r.residentName, r.volunteerName, r.status]
+            .filter(Boolean)
+            .some((field) => String(field).toLowerCase().includes(q));
+        });
 
+        if (shown.length === 0) {
+          list.append(el("p", "empty", "No matching requests found."));
+        } else {
+          shown.forEach((r) => list.append(makeCard(r)));
+        }
+
+        const active = ["Verified", "Assigned", "In Progress"];
         document.querySelector("#count-total").textContent = requests.length;
-        document.querySelector("#count-unassigned").textContent = requests.filter((r) => r.status === "unassigned").length;
-        document.querySelector("#count-active").textContent = requests.filter((r) => r.status === "assigned" || r.status === "inprogress").length;
-        document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "resolved").length;
+        document.querySelector("#count-pending").textContent = requests.filter((r) => r.status === "Pending").length;
+        document.querySelector("#count-active").textContent = requests.filter((r) => active.includes(r.status)).length;
+        document.querySelector("#count-resolved").textContent = requests.filter((r) => r.status === "Resolved").length;
       }
 
       async function load() {
-        try {
-          [requests, volunteers] = await Promise.all([api.getAllRequests(), api.getVolunteers()]);
-          render();
-        } catch (err) {
-          document.querySelector("#error-message").textContent = err.message;
+        errorBox.textContent = "";
+        const [requestResult, volunteerResult, appsResult] = await Promise.allSettled([
+          api.getAllRequests(),
+          api.getVolunteers(),
+          api.getVolunteerApplications(),
+        ]);
+
+        if (requestResult.status === "fulfilled") {
+          requests = requestResult.value;
+        } else {
+          errorBox.textContent = "Could not load requests: " + requestResult.reason.message;
         }
+
+        if (volunteerResult.status === "fulfilled") {
+          volunteers = volunteerResult.value;
+        } else {
+          errorBox.textContent +=
+            (errorBox.textContent ? " | " : "") +
+            "Could not load volunteers: " +
+            volunteerResult.reason.message;
+        }
+
+        if (appsResult && appsResult.status === "fulfilled") { applications = appsResult.value || []; }
+        render();
+        renderApplications();
       }
 
-      // ----- Pop-up -----
-      const modal = document.querySelector("#modal");
+      // ----- Filter tabs & search -----
+      const tabs = document.querySelectorAll("#filter-tabs .tab");
+      tabs.forEach((tab) =>
+        tab.addEventListener("click", () => {
+          tabs.forEach((x) => x.classList.remove("active"));
+          tab.classList.add("active");
+          currentFilter = tab.dataset.filter;
+          render();
+        })
+      );
 
-      function openModal(request) {
+      searchInput.addEventListener("input", () => {
+        searchQuery = searchInput.value;
+        render();
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Refreshing...";
+        await load();
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh";
+      });
+
+      // ----- Pop-up 1: assign -----
+      const assignModal = document.querySelector("#assign-modal");
+      const assignError = document.querySelector("#assign-error");
+
+      function openAssign(request) {
         selectedRequest = request;
+        assignError.textContent = "";
+        document.querySelector("#assign-subtitle").textContent =
+          `Assign a volunteer for ${request.residentName || "Citizen"}'s ${request.category} request.`;
         const list = document.querySelector("#volunteer-list");
         list.innerHTML = "";
+        if (volunteers.length === 0) {
+          list.append(el("p", "empty", "No volunteers yet. Add one first."));
+        }
 
         volunteers.forEach((v) => {
-          const active = requests.filter((r) => r.volunteerId === v.id && r.status !== "resolved").length;
           const button = el("button", "volunteer-option");
+          button.type = "button";
+          const isAvail = v.available !== false;
+          button.disabled = !isAvail;
+
           const left = el("span");
-          left.append(v.name);
-          left.append(el("small", null, v.email + " · " + active + " active task" + (active === 1 ? "" : "s")));
-          button.append(left, el("span", null, "Assign"));
+          left.append(v.name || "Volunteer");
+          left.append(el("small", null, (v.email || "") + (isAvail ? "" : " (Unavailable)")));
+
+          const right = el("span", null, isAvail ? "Assign" : "Unavailable");
+          button.append(left, right);
 
           button.addEventListener("click", async () => {
+            assignError.textContent = "";
+            list.querySelectorAll("button").forEach((b) => (b.disabled = true));
+            right.textContent = "Assigning...";
             try {
               await api.assignVolunteer(selectedRequest.id, v.id);
-              modal.style.display = "none";
+              assignModal.style.display = "none";
               await load();
             } catch (err) {
-              modal.style.display = "none";
-              document.querySelector("#error-message").textContent = err.message;
+              assignError.textContent = "Assignment failed: " + err.message;
+              list.querySelectorAll("button").forEach((b, idx) => {
+                b.disabled = volunteers[idx]?.available === false;
+              });
+              right.textContent = "Assign";
             }
           });
           list.append(button);
         });
-
-        modal.style.display = "flex";
+        assignModal.style.display = "flex";
       }
-      document.querySelector("#cancel-btn").addEventListener("click", () => { modal.style.display = "none"; });
+      document.querySelector("#assign-cancel").addEventListener("click", () => {
+        assignModal.style.display = "none";
+      });
 
-      // ----- Filter tabs -----
-      const tabs = document.querySelectorAll("#filter-tabs .tab");
-      tabs.forEach((tab) => tab.addEventListener("click", () => {
-        tabs.forEach((x) => x.classList.remove("active"));
-        tab.classList.add("active");
-        currentFilter = tab.dataset.filter;
-        render();
-      }));
+      // ----- Pop-up 2: add volunteer -----
+      const volunteerModal = document.querySelector("#volunteer-modal");
+      const volunteerForm = document.querySelector("#volunteer-form");
+      const volunteerMessage = document.querySelector("#volunteer-message");
 
-      if (me) load();
+      document.querySelector("#add-volunteer-btn").addEventListener("click", () => {
+        volunteerMessage.textContent = "";
+        volunteerMessage.className = "error";
+        volunteerModal.style.display = "flex";
+      });
+      document.querySelector("#volunteer-cancel").addEventListener("click", () => {
+        volunteerModal.style.display = "none";
+      });
+
+      volunteerForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        volunteerMessage.className = "error";
+        volunteerMessage.textContent = "";
+        const button = volunteerForm.querySelector("button[type='submit']");
+        button.disabled = true;
+        button.textContent = "Creating...";
+        try {
+          const v = await api.createVolunteer({
+            name: document.querySelector("#v-name").value.trim(),
+            email: document.querySelector("#v-email").value.trim(),
+            phone: document.querySelector("#v-phone").value.trim(),
+            password: document.querySelector("#v-password").value,
+          });
+          volunteerForm.reset();
+          volunteerMessage.className = "error ok-text";
+          volunteerMessage.textContent = "Created: " + v.name;
+          await load();
+        } catch (err) {
+          volunteerMessage.textContent = err.message;
+        }
+        button.disabled = false;
+        button.textContent = "Create volunteer";
+      });
+
+      if (me) {
+        load();
+        setInterval(() => {
+          if (document.visibilityState === "visible") load();
+        }, 15000);
+      }
     </script>
   </body>
 </html>

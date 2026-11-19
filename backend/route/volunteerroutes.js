@@ -1,4 +1,3 @@
-
 const express = require("express");
 const router = express.Router();
 
@@ -9,7 +8,9 @@ const controller = require("../controllers/volunteer.controller");
 // Authentication and volunteer role protection
 router.use(auth, allowRoles("volunteer"));
 
-// CREATE VOLUNTEER PROFILE
+// VOLUNTEER PROFILE
+router.get("/profile", controller.getMyProfile);
+router.patch("/profile", controller.updateMyProfile);
 router.post("/profile", controller.createProfile);
 
 // GET AVAILABLE REQUESTS
