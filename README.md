@@ -54,6 +54,7 @@ FRONTEND_URL=
 CORS_ORIGIN=
 ALLOW_VERCEL_ORIGINS=false
 ADMIN_CONTACT_EMAIL=
+```
 
 ### Team
 * **Debangan Chakraborty** – Lead Frontend, UI/UX, Nexconn ChatUI Integration & Deployment
