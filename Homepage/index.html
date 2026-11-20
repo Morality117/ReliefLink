@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ReliefLink – Connect, Coordinate, Save Lives</title>
     <link rel="stylesheet" href="home.css">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c2f6b'/%3E%3Cpath d='M32 14c-8.3 0-15 6.7-15 15 0 10.5 15 23 15 23s15-12.5 15-23c0-8.3-6.7-15-15-15z' fill='%23f7931e'/%3E%3Ccircle cx='32' cy='29' r='5.5' fill='%23ffffff'/%3E%3C/svg%3E">
   </head>
   <body>
 
@@ -142,7 +141,7 @@
           </details>
           <details>
             <summary>How do I become a volunteer?</summary>
-            <p>Click "Apply to Volunteer" under the Join ReliefLink section on the homepage (or email the admin team directly from that form) with your contact details, skills, and availability. Once an admin reviews your application and sets up your volunteer account, you can log in to browse open requests and accept the ones you can take.</p>
+            <p>Volunteer accounts are created by an admin. Once you have one, log in to see open requests and accept the ones you can take.</p>
           </details>
           <details>
             <summary>Who can see my location?</summary>
@@ -169,6 +168,8 @@
         <a href="#faq">FAQ</a>
         <a href="../LoginSignupPage/login.html">Log In</a>
         <a href="../LoginSignupPage/signup.html">Sign Up</a>
+        <a href="#privacy" id="open-privacy">Privacy Policy</a>
+        <a href="#terms" id="open-terms">Terms of Service</a>
       </div>
       <p>Connect • Coordinate • Save Lives</p>
     </footer>
@@ -279,6 +280,64 @@
         btn.disabled = false;
         btn.textContent = "Submit Application";
       });
+    </script>
+
+
+    <!-- PRIVACY POLICY MODAL -->
+    <div class="modal-backdrop" id="privacy-modal">
+      <div class="modal">
+        <h3>Privacy Policy</h3>
+        <p class="hint">Last updated: November 2026</p>
+        <div style="font-size:0.9rem;color:#3d4b66;line-height:1.6;">
+          <p><strong>Information We Collect:</strong> When you create an account or submit a help request on ReliefLink, we collect your name, email address, phone number, optional profile photo, request details, and the location coordinates you choose to share.</p>
+          <p><strong>How We Use Information:</strong> Your request details and location are shared only with authorized coordinators and assigned volunteers to deliver assistance and enable real-time chat via Nexconn.</p>
+          <p><strong>Data Storage &amp; Deletion:</strong> Account and request records are stored securely using Supabase. You can permanently delete your account and personal request data at any time from your Citizen or Volunteer dashboard.</p>
+          <p><strong>Contact:</strong> For privacy questions, email <a href="mailto:relieflink.support@gmail.com">relieflink.support@gmail.com</a>.</p>
+        </div>
+        <button type="button" class="btn primary" id="privacy-close" style="width:100%;margin-top:14px;">Close</button>
+      </div>
+    </div>
+
+    <!-- TERMS OF SERVICE MODAL -->
+    <div class="modal-backdrop" id="terms-modal">
+      <div class="modal">
+        <h3>Terms of Service</h3>
+        <p class="hint">Last updated: November 2026</p>
+        <div style="font-size:0.9rem;color:#3d4b66;line-height:1.6;">
+          <p><strong>Emergency Disclaimer:</strong> ReliefLink is a community volunteer-coordination platform and does <strong>not</strong> replace official emergency services. In immediate danger, always call 112, 108, 101, or 100 first.</p>
+          <p><strong>Acceptable Use:</strong> Users agree to provide accurate location and request details, refrain from submitting false or abusive requests, and communicate respectfully with volunteers and citizens.</p>
+          <p><strong>Volunteer Coordination:</strong> Volunteers act in good faith to assist nearby citizens. ReliefLink and its coordinators do not guarantee response times or availability.</p>
+          <p><strong>Contact:</strong> Questions about these terms can be sent to <a href="mailto:relieflink.support@gmail.com">relieflink.support@gmail.com</a>.</p>
+        </div>
+        <button type="button" class="btn primary" id="terms-close" style="width:100%;margin-top:14px;">Close</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const privModal = document.querySelector("#privacy-modal");
+        const termsModal = document.querySelector("#terms-modal");
+
+        document.querySelector("#open-privacy").addEventListener("click", (e) => {
+          e.preventDefault();
+          privModal.style.display = "flex";
+        });
+        document.querySelector("#open-terms").addEventListener("click", (e) => {
+          e.preventDefault();
+          termsModal.style.display = "flex";
+        });
+        document.querySelector("#privacy-close").addEventListener("click", () => {
+          privModal.style.display = "none";
+          if (location.hash === "#privacy") history.replaceState(null, "", location.pathname);
+        });
+        document.querySelector("#terms-close").addEventListener("click", () => {
+          termsModal.style.display = "none";
+          if (location.hash === "#terms") history.replaceState(null, "", location.pathname);
+        });
+
+        if (location.hash === "#privacy") privModal.style.display = "flex";
+        if (location.hash === "#terms") termsModal.style.display = "flex";
+      })();
     </script>
 
   </body>

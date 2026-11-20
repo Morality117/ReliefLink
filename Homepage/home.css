@@ -169,13 +169,6 @@ section { scroll-margin-top: 70px; }   /* so the sticky nav doesn't cover headin
   border: 1px solid #e2e9f5;
 }
 
-.hero-visual img,
-.role-img {
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: none;
-}
-
 .icon svg { width: 24px; height: 24px; display: block; }
 .features-grid { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
