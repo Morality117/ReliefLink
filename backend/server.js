@@ -111,6 +111,75 @@ app.get("/api/me", authMiddleware, async (req, res) => {
 
 
 
+
+// Validate signup email address (blocks fake/disposable domains, typos, and domains without MX records)
+app.post("/api/auth/validate-email", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return res.status(400).json({ success: false, error: "Please enter a valid email address." });
+  }
+
+  const domain = email.split("@")[1];
+
+  const TYPO_DOMAINS = {
+    "gmai.com": "gmail.com",
+    "gmial.com": "gmail.com",
+    "gamil.com": "gmail.com",
+    "gmail.co": "gmail.com",
+    "gnail.com": "gmail.com",
+    "yaho.com": "yahoo.com",
+    "yahooo.com": "yahoo.com",
+    "outlok.com": "outlook.com",
+    "hotmai.com": "hotmail.com",
+    "hotmal.com": "hotmail.com"
+  };
+
+  if (TYPO_DOMAINS[domain]) {
+    return res.status(400).json({
+      success: false,
+      error: `Did you mean @${TYPO_DOMAINS[domain]}? Please check your email address.`
+    });
+  }
+
+  const BLOCKED_DOMAINS = new Set([
+    "xyz.com", "example.com", "example.org", "example.net",
+    "test.com", "fake.com", "abc.com", "abcd.com", "asdf.com",
+    "mailinator.com", "tempmail.com", "temp-mail.org", "yopmail.com",
+    "10minutemail.com", "guerrillamail.com", "sharklasers.com", "throwawaymail.com"
+  ]);
+
+  if (BLOCKED_DOMAINS.has(domain)) {
+    return res.status(400).json({
+      success: false,
+      error: "Please use a real, personal email address to create an account."
+    });
+  }
+
+  try {
+    const dns = require("dns").promises;
+    const mx = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("DNS timeout")), 3000))
+    ]);
+    if (!Array.isArray(mx) || mx.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "This email domain cannot receive emails. Please use a valid email address."
+      });
+    }
+  } catch (err) {
+    if (err && (err.code === "ENOTFOUND" || err.code === "ENODATA" || err.code === "NXDOMAIN")) {
+      return res.status(400).json({
+        success: false,
+        error: "This email domain does not exist. Please check your email address."
+      });
+    }
+    // Fail open on transient DNS timeouts so legitimate users are not blocked
+  }
+
+  return success(res, { valid: true }, "Email is valid");
+});
+
 // Ensure profile exists after OAuth login (e.g. Google sign-in)
 app.post("/api/auth/ensure-profile", async (req, res, next) => {
   try {

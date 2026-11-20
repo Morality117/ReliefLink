@@ -999,6 +999,16 @@ const realApi = {
   },
 
   async signup(d) {
+    const checkRes = await fetch(API_URL + "/api/auth/validate-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: d.email.trim() }),
+    });
+    const checkJson = await checkRes.json().catch(() => null);
+    if (!checkRes.ok || (checkJson && checkJson.success === false)) {
+      throw new Error((checkJson && checkJson.error) || "Please enter a valid email address.");
+    }
+
     const { data, error } = await sb().auth.signUp({
       email: d.email.trim(),
       password: d.password,
@@ -1012,6 +1022,9 @@ const realApi = {
     });
 
     if (error) throw new Error(error.message);
+    if (data?.user?.identities && data.user.identities.length === 0) {
+      throw new Error("An account with this email already exists. Try logging in or using Continue with Google.");
+    }
     if (!data.session) return null;
     return realApi.login(d.email, d.password);
   },
