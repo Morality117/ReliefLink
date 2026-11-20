@@ -6,13 +6,47 @@
     <title>Chat – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
     <style>
-      body { margin: 0; }
-      #chatui-root { height: calc(100vh - 64px); }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .topbar { flex-shrink: 0; }
+      #chatui-root {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+      nc-chat-ui-app-provider {
+        display: block;
+        height: 100%;
+      }
       #chat-status {
-        display: none; margin: 0; padding: 12px 24px; background: #fff4d6; color: #7a5200;
-        font-size: 0.92rem; text-align: center; font-weight: 500;
+        display: none;
+        flex-shrink: 0;
+        margin: 0;
+        padding: 10px 20px;
+        background: #fff4d6;
+        color: #7a5200;
+        font-size: 0.9rem;
+        text-align: center;
+        font-weight: 500;
       }
       #chat-status.bad { background: #ffe0e3; color: #b81f2f; }
+      #chat-paused-banner {
+        display: none;
+        flex-shrink: 0;
+        margin: 0;
+        padding: 10px 20px;
+        background: #e8f8ed;
+        color: #1a7a38;
+        border-bottom: 1px solid #c3ebd0;
+        font-size: 0.88rem;
+        font-weight: 600;
+        text-align: center;
+      }
       .partner-pill {
         background: rgba(255, 255, 255, 0.14);
         border: 1px solid rgba(255, 255, 255, 0.28);
@@ -48,6 +82,7 @@
     </div>
 
     <p id="chat-status"></p>
+    <p id="chat-paused-banner"></p>
     <div id="chatui-root"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
