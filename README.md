@@ -1,5 +1,4 @@
 # ReliefLink
-# ReliefLink
 
 ReliefLink is a full-stack humanitarian emergency-response platform designed to streamline assistance requests, volunteer coordination, and real-time communication. Its backend is architected using Node.js, Express.js, PostgreSQL, Supabase, and the Nexconn Server SDK, implementing RESTful APIs, JWT-based authentication, role-based access control (RBAC), and Row Level Security (RLS).
 
