@@ -23,13 +23,6 @@ const requestId = params.get("request");
 const toNexconnUserId = (id) =>
   id ? "rl" + String(id).replace(/-/g, "") : null;
 
-const fromNexconnUserId = (ncId) => {
-  const raw = String(ncId || "").trim();
-  if (!/^rl[0-9a-f]{32}$/i.test(raw)) return null;
-  const h = raw.slice(2).toLowerCase();
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-};
-
 const nexconnMeId = toNexconnUserId(me.id);
 const nexconnPartnerId = toNexconnUserId(partnerId);
 
@@ -37,8 +30,6 @@ const partnerLabel = me.role === "resident" ? "Volunteer" : "Citizen";
 let partnerName = params.get("withName") || partnerLabel;
 
 const statusBox = document.querySelector("#chat-status");
-const pausedBanner = document.querySelector("#chat-paused-banner");
-const readonlyOverlay = document.querySelector("#chat-readonly-overlay");
 const partnerBanner = document.querySelector("#chat-partner-banner");
 
 function updatePartnerBanner(name, avatarUrl) {
@@ -64,43 +55,6 @@ function showStatus(text, bad) {
   statusBox.textContent = text;
   statusBox.className = bad ? "bad" : "";
   statusBox.style.display = text ? "block" : "none";
-}
-
-// Track active vs resolved requests/tasks so resolved conversations become read-only
-let myItemsCache = [];
-async function loadMyItems() {
-  try {
-    myItemsCache = me.role === "resident" ? await api.getMyRequests() : await api.getMyTasks();
-  } catch (e) {
-    myItemsCache = [];
-  }
-}
-
-function isConversationPaused(targetNexconnOrUuid) {
-  if (!targetNexconnOrUuid || !myItemsCache.length) return false;
-  const targetUuid = fromNexconnUserId(targetNexconnOrUuid) || targetNexconnOrUuid;
-  const related = myItemsCache.filter((item) =>
-    me.role === "resident" ? item.volunteerId === targetUuid : item.residentId === targetUuid
-  );
-  if (!related.length) return false;
-  const hasActive = related.some((item) =>
-    item.status === "Assigned" || item.status === "In Progress"
-  );
-  return !hasActive;
-}
-
-function updatePausedUI(targetId) {
-  const paused = isConversationPaused(targetId);
-  if (paused) {
-    pausedBanner.textContent =
-      "This task is resolved. Chat history remains available, and sending new messages is paused.";
-    pausedBanner.style.display = "block";
-    if (readonlyOverlay) readonlyOverlay.style.display = "flex";
-  } else {
-    pausedBanner.style.display = "none";
-    if (readonlyOverlay) readonlyOverlay.style.display = "none";
-  }
-  return paused;
 }
 
 /* =====================================================================
@@ -129,11 +83,9 @@ function bubbleText(text) {
   return holder;
 }
 
-async function startMockChat() {
+function startMockChat() {
   showStatus("Demo chat (mock mode). Messages are saved in this browser only. Set USE_MOCK = false in js/api.js for the real Nexconn chat.");
   updatePartnerBanner(partnerName);
-  await loadMyItems();
-  const paused = updatePausedUI(partnerId);
 
   const root = document.querySelector("#chatui-root");
   root.innerHTML = "";
@@ -143,18 +95,14 @@ async function startMockChat() {
   const form = el("form", "mock-form");
   const input = el("input");
   input.type = "text";
-  input.placeholder = paused ? "Task resolved — chat is read-only" : "Type a message...";
-  input.disabled = paused;
+  input.placeholder = "Type a message...";
   input.autocomplete = "off";
   const send = el("button", "btn primary", "Send");
   send.type = "submit";
-  send.disabled = paused;
   const loc = el("button", "btn outline", "📍 Send my location");
   loc.type = "button";
-  loc.disabled = paused;
   const sim = el("button", "btn outline", "Simulate a reply");
   sim.type = "button";
-  sim.disabled = paused;
   form.append(input, send, loc, sim);
   box.append(header, list, form);
   root.append(box);
@@ -185,7 +133,6 @@ async function startMockChat() {
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (paused) return;
     const text = input.value.trim();
     if (!text) return;
     add(me.id, me.name, text);
@@ -193,7 +140,6 @@ async function startMockChat() {
   });
 
   loc.addEventListener("click", () => {
-    if (paused) return;
     if (!navigator.geolocation) { showStatus("Your browser can't share a location.", true); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -204,9 +150,7 @@ async function startMockChat() {
     );
   });
 
-  sim.addEventListener("click", () => {
-    if (!paused) add(partnerId || "partner", partnerName, "On my way! Stay where you are.");
-  });
+  sim.addEventListener("click", () => add(partnerId || "partner", partnerName, "On my way! Stay where you are."));
 
   window.addEventListener("storage", (e) => { if (e.key === MOCK_CHAT_KEY) render(); });
   render();
@@ -230,14 +174,9 @@ async function startRealChat() {
   const [
     { NCEngine, DirectChannelIdentifier, SendTextMessageParams, MessageHandler, BaseChannel },
     { NCChatUIApplication, ChatUIEvents },
-    info,
-  ] = await Promise.all([
-    import("@nexconn/chat"),
-    import("@nexconn/chatui"),
-    api.getChatToken(requestId, partnerId),
-    loadMyItems(),
-  ]);
+  ] = await Promise.all([import("@nexconn/chat"), import("@nexconn/chatui")]);
 
+  const info = await api.getChatToken(requestId, partnerId);
   const token = info && ((info.result && (info.result.accessToken || info.result.token)) || info.accessToken || info.token);
   const appKey = info && info.appKey;
 
@@ -325,9 +264,6 @@ async function startRealChat() {
   const app = NCChatUIApplication.initialize({ hooks, language: "en_US" });
   if (!app) throw new Error("ChatUI could not start in this browser.");
 
-  let activeChannelId = nexconnPartnerId || null;
-
-  // Add "Send my location" button to message input
   const menu = app.cloneInputMenu();
   menu.items.push({ id: "custom:location", order: 10, icon: PIN_ICON });
   app.setInputMenu(menu);
@@ -338,10 +274,6 @@ async function startRealChat() {
   app.addEventListener(ChatUIEvents.INPUT_MENU_ITEM_CLICK, (event) => {
     if (event.data.id !== "custom:location") return;
     const channelIdentifier = event.data.channelModel.channelIdentifier;
-    if (isConversationPaused(channelIdentifier?.channelId || activeChannelId)) {
-      showStatus("This task is resolved. Sending new messages is paused.", true);
-      return;
-    }
 
     if (!navigator.geolocation) { showStatus("Your browser can't share a location.", true); return; }
     navigator.geolocation.getCurrentPosition(
@@ -353,34 +285,21 @@ async function startRealChat() {
     );
   });
 
-  // Hide status banner when any conversation is selected and check if task is resolved
+  let activeChannelId = nexconnPartnerId || null;
+
   app.addEventListener(ChatUIEvents.CHANNEL_SELECTED, (event) => {
     showStatus("");
     const chId =
       event?.data?.channelModel?.channelIdentifier?.channelId ||
       event?.data?.channelIdentifier?.channelId ||
       event?.data?.channelId ||
-      event?.data?.targetId ||
       null;
     if (chId) {
       activeChannelId = chId;
       const cached = userProfileCache.get(chId);
       if (cached && cached.name) updatePartnerBanner(cached.name, cached.avatarUrl);
-      updatePausedUI(chId);
     }
   });
-
-  // Wrap app.sendMessage so resolved chats cannot send messages programmatically either
-  const origSendMessage = app.sendMessage.bind(app);
-  app.sendMessage = async (channelIdentifier, params) => {
-    const chId = channelIdentifier?.channelId || activeChannelId;
-    if (isConversationPaused(chId)) {
-      updatePausedUI(chId);
-      showStatus("This task is resolved. Chat history is read-only.", true);
-      return { isOk: false, code: -1, msg: "Chat is paused for resolved task" };
-    }
-    return origSendMessage(channelIdentifier, params);
-  };
 
   app.ready();
 
@@ -406,7 +325,6 @@ async function startRealChat() {
       showStatus("");
       const c = userProfileCache.get(senderNexconnId);
       updatePartnerBanner(senderName, c?.avatarUrl || "");
-      updatePausedUI(senderNexconnId);
       app.openChannel(new DirectChannelIdentifier(senderNexconnId), true);
     },
   });
@@ -414,7 +332,6 @@ async function startRealChat() {
   if (partnerId && nexconnPartnerId) {
     const channelIdentifier = new DirectChannelIdentifier(nexconnPartnerId);
     activeChannelId = nexconnPartnerId;
-    updatePausedUI(nexconnPartnerId);
 
     try {
       let openResult = null;
