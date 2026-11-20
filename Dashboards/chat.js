@@ -38,6 +38,7 @@ let partnerName = params.get("withName") || partnerLabel;
 
 const statusBox = document.querySelector("#chat-status");
 const pausedBanner = document.querySelector("#chat-paused-banner");
+const readonlyOverlay = document.querySelector("#chat-readonly-overlay");
 const partnerBanner = document.querySelector("#chat-partner-banner");
 
 function updatePartnerBanner(name, avatarUrl) {
@@ -94,8 +95,10 @@ function updatePausedUI(targetId) {
     pausedBanner.textContent =
       "This task is resolved. Chat history remains available, and sending new messages is paused.";
     pausedBanner.style.display = "block";
+    if (readonlyOverlay) readonlyOverlay.style.display = "flex";
   } else {
     pausedBanner.style.display = "none";
+    if (readonlyOverlay) readonlyOverlay.style.display = "none";
   }
   return paused;
 }
@@ -356,6 +359,8 @@ async function startRealChat() {
     const chId =
       event?.data?.channelModel?.channelIdentifier?.channelId ||
       event?.data?.channelIdentifier?.channelId ||
+      event?.data?.channelId ||
+      event?.data?.targetId ||
       null;
     if (chId) {
       activeChannelId = chId;
@@ -365,15 +370,17 @@ async function startRealChat() {
     }
   });
 
-  // Block sending new messages if the task with this partner is already resolved
-  app.addEventListener(ChatUIEvents.MESSAGE_WILL_SEND, (event) => {
-    const chId = event?.data?.channelIdentifier?.channelId || activeChannelId;
+  // Wrap app.sendMessage so resolved chats cannot send messages programmatically either
+  const origSendMessage = app.sendMessage.bind(app);
+  app.sendMessage = async (channelIdentifier, params) => {
+    const chId = channelIdentifier?.channelId || activeChannelId;
     if (isConversationPaused(chId)) {
-      if (typeof event.preventDefault === "function") event.preventDefault();
       updatePausedUI(chId);
       showStatus("This task is resolved. Chat history is read-only.", true);
+      return { isOk: false, code: -1, msg: "Chat is paused for resolved task" };
     }
-  });
+    return origSendMessage(channelIdentifier, params);
+  };
 
   app.ready();
 

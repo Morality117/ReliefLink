@@ -15,9 +15,32 @@
       }
       .topbar { flex-shrink: 0; }
       #chatui-root {
+        position: relative;
         flex: 1;
         min-height: 0;
         overflow: hidden;
+      }
+      #chat-readonly-overlay {
+        display: none;
+        position: absolute;
+        left: 320px;
+        right: 0;
+        bottom: 0;
+        height: 112px;
+        background: rgba(240, 244, 251, 0.96);
+        backdrop-filter: blur(2px);
+        border-top: 1px solid #d5dcea;
+        color: #1a7a38;
+        font-size: 0.92rem;
+        font-weight: 600;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 12px 20px;
+        z-index: 30;
+      }
+      @media (max-width: 760px) {
+        #chat-readonly-overlay { left: 0; }
       }
       nc-chat-ui-app-provider {
         display: block;
@@ -83,7 +106,7 @@
 
     <p id="chat-status"></p>
     <p id="chat-paused-banner"></p>
-    <div id="chatui-root"></div>
+    <div id="chatui-root"><div id="chat-readonly-overlay">This task is resolved. Chat history is read-only.</div></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
