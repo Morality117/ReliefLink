@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Volunteer Dashboard – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c2f6b'/%3E%3Cpath d='M32 14c-8.3 0-15 6.7-15 15 0 10.5 15 23 15 23s15-12.5 15-23c0-8.3-6.7-15-15-15z' fill='%23f7931e'/%3E%3Ccircle cx='32' cy='29' r='5.5' fill='%23ffffff'/%3E%3C/svg%3E">
   </head>
   <body>
 
@@ -22,12 +21,12 @@
     <div class="page">
 
       <div class="hero">
-        <h1>People who need help</h1>
-        <p>Accept an open request to take it on, coordinate via chat, and keep its status up to date.</p>
+        <h1>My Assigned Relief Tasks</h1>
+        <p>Requests are verified and assigned by an admin coordinator. View your assigned tasks below, update their status, and chat with the citizen.</p>
       </div>
 
       <div class="stats">
-        <div class="stat"><strong id="count-available">0</strong><span>Waiting for a volunteer</span></div>
+        <div class="stat"><strong id="count-total">0</strong><span>Total assigned</span></div>
         <div class="stat"><strong id="count-active">0</strong><span>My active tasks</span></div>
         <div class="stat"><strong id="count-resolved">0</strong><span>Resolved by me</span></div>
       </div>
@@ -36,39 +35,24 @@
       <p class="error" id="error-message"></p>
 
       <div class="section-bar">
-        <button class="section-toggle" id="toggle-available" type="button" aria-expanded="true" aria-controls="available-section">
+        <button class="section-toggle" id="toggle-tasks" type="button" aria-expanded="true" aria-controls="tasks-section">
           <span class="chevron">▼</span>
-          <span>Available Requests</span>
-          <span class="section-count" id="badge-available">0</span>
+          <span>My Assigned Tasks</span>
+          <span class="section-count" id="badge-tasks">0</span>
         </button>
         <div class="section-controls">
           <span class="live-pill">Live updates active</span>
           <button class="btn outline sm" id="refresh-btn" type="button">Refresh</button>
         </div>
       </div>
-      <div class="collapsible-body" id="available-section">
-        <div id="available-list"><p class="empty">Loading available requests...</p></div>
-        <div class="show-more-wrap" id="available-more-wrap" hidden>
-          <button class="btn outline sm" id="available-more-btn" type="button"></button>
-        </div>
-      </div>
-
-      <div class="section-bar">
-        <button class="section-toggle" id="toggle-tasks" type="button" aria-expanded="true" aria-controls="tasks-section">
-          <span class="chevron">▼</span>
-          <span>My Tasks</span>
-          <span class="section-count" id="badge-tasks">0</span>
-        </button>
-      </div>
       <div class="collapsible-body" id="tasks-section">
-        <div id="task-list"><p class="empty">Loading your tasks...</p></div>
+        <div id="task-list"><p class="empty">Loading your assigned tasks...</p></div>
         <div class="show-more-wrap" id="tasks-more-wrap" hidden>
           <button class="btn outline sm" id="tasks-more-btn" type="button"></button>
         </div>
       </div>
     </div>
 
-    
     <!-- Volunteer Profile Summary & Edit Modal -->
     <div class="modal-backdrop" id="profile-modal">
       <div class="modal">
@@ -119,36 +103,24 @@
       const errorBox = document.querySelector("#error-message");
       const refreshBtn = document.querySelector("#refresh-btn");
 
-      let available = [];
       let tasks = [];
       let mapFitted = false;
-      let showAllAvailable = false;
       let showAllTasks = false;
       const PREVIEW_LIMIT = 5;
 
-      function setupCollapsible(btnId, bodyId, storageKey) {
-        const btn = document.querySelector(btnId);
-        const body = document.querySelector(bodyId);
-        const saved = localStorage.getItem(storageKey);
-        if (saved === "collapsed") {
-          btn.setAttribute("aria-expanded", "false");
-          body.hidden = true;
-        }
-        btn.addEventListener("click", () => {
-          const expanded = btn.getAttribute("aria-expanded") === "true";
-          btn.setAttribute("aria-expanded", String(!expanded));
-          body.hidden = expanded;
-          localStorage.setItem(storageKey, expanded ? "collapsed" : "open");
-        });
+      const toggleBtn = document.querySelector("#toggle-tasks");
+      const sectionBody = document.querySelector("#tasks-section");
+      if (localStorage.getItem("rl_vol_tasks_state") === "collapsed") {
+        toggleBtn.setAttribute("aria-expanded", "false");
+        sectionBody.hidden = true;
       }
-
-      setupCollapsible("#toggle-available", "#available-section", "rl_vol_avail_state");
-      setupCollapsible("#toggle-tasks", "#tasks-section", "rl_vol_tasks_state");
-
-      document.querySelector("#available-more-btn").addEventListener("click", () => {
-        showAllAvailable = !showAllAvailable;
-        render();
+      toggleBtn.addEventListener("click", () => {
+        const expanded = toggleBtn.getAttribute("aria-expanded") === "true";
+        toggleBtn.setAttribute("aria-expanded", String(!expanded));
+        sectionBody.hidden = expanded;
+        localStorage.setItem("rl_vol_tasks_state", expanded ? "collapsed" : "open");
       });
+
       document.querySelector("#tasks-more-btn").addEventListener("click", () => {
         showAllTasks = !showAllTasks;
         render();
@@ -227,46 +199,19 @@
       }
 
       function render() {
-        const availableList = document.querySelector("#available-list");
         const taskList = document.querySelector("#task-list");
-        const availMoreWrap = document.querySelector("#available-more-wrap");
-        const availMoreBtn = document.querySelector("#available-more-btn");
         const tasksMoreWrap = document.querySelector("#tasks-more-wrap");
         const tasksMoreBtn = document.querySelector("#tasks-more-btn");
 
-        availableList.innerHTML = "";
         taskList.innerHTML = "";
         markers.forEach((m) => m.setMap(null));
         markers = [];
         markersById = {};
 
-        document.querySelector("#badge-available").textContent = available.length;
         document.querySelector("#badge-tasks").textContent = tasks.length;
 
-        if (available.length === 0) {
-          availableList.append(el("p", "empty", "No requests are waiting right now."));
-          availMoreWrap.hidden = true;
-        } else {
-          const visibleAvail = showAllAvailable ? available : available.slice(0, PREVIEW_LIMIT);
-          visibleAvail.forEach((r) => {
-            const { card, actions } = baseCard(r);
-            const accept = el("button", "btn primary sm", "Accept");
-            run(accept, "Accepting...", () => api.acceptRequest(r.id));
-            actions.append(accept);
-            availableList.append(card);
-          });
-          if (available.length > PREVIEW_LIMIT) {
-            availMoreWrap.hidden = false;
-            availMoreBtn.textContent = showAllAvailable
-              ? "Show fewer"
-              : `Show all ${available.length} available requests`;
-          } else {
-            availMoreWrap.hidden = true;
-          }
-        }
-
         if (tasks.length === 0) {
-          taskList.append(el("p", "empty", "You haven't accepted or been assigned any requests yet."));
+          taskList.append(el("p", "empty", "You have no assigned tasks right now. An admin will assign tasks when needed."));
           tasksMoreWrap.hidden = true;
         } else {
           const visibleTasks = showAllTasks ? tasks : tasks.slice(0, PREVIEW_LIMIT);
@@ -302,7 +247,7 @@
         }
 
         if (map) {
-          [...available, ...tasks].forEach((r) => {
+          tasks.forEach((r) => {
             if (r.latitude == null) return;
             const who = r.residentName ? ` — ${r.residentName}` : "";
             const marker = new google.maps.Marker({
@@ -316,7 +261,7 @@
           });
         }
 
-        document.querySelector("#count-available").textContent = available.length;
+        document.querySelector("#count-total").textContent = tasks.length;
         document.querySelector("#count-active").textContent = tasks.filter(
           (t) => t.status === "Assigned" || t.status === "In Progress"
         ).length;
@@ -327,17 +272,14 @@
 
       async function load() {
         try {
-          [available, tasks] = await Promise.all([
-            api.getAvailableRequests(),
-            api.getMyTasks(),
-          ]);
+          tasks = await api.getMyTasks();
           await mapReady;
           render();
 
           if (map && !mapFitted) {
             const bounds = new google.maps.LatLngBounds();
             let count = 0;
-            [...available, ...tasks].forEach((r) => {
+            tasks.forEach((r) => {
               if (r.latitude != null) {
                 bounds.extend({ lat: r.latitude, lng: r.longitude });
                 count++;
@@ -364,8 +306,9 @@
         refreshBtn.textContent = "Refresh";
       });
 
-
       const profileModal = document.querySelector("#profile-modal");
+      const profileMsg = document.querySelector("#profile-message");
+      const profileForm = document.querySelector("#profile-form");
       let currentAvatarUrl = "";
 
       function renderProfAvatar(url, name) {
@@ -399,8 +342,6 @@
         document.querySelector("#prof-avatar-input").value = "";
         renderProfAvatar("", document.querySelector("#prof-input-name").value);
       });
-      const profileMsg = document.querySelector("#profile-message");
-      const profileForm = document.querySelector("#profile-form");
 
       function populateProfile(p) {
         document.querySelector("#prof-name").textContent = p.full_name || "Volunteer";

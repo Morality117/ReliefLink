@@ -94,13 +94,11 @@ exports.updateMyProfile = async (req, res, next) => {
 };
 
 // GET AVAILABLE REQUESTS
-exports.getAvailableRequests = async (req, res, next) => {
-  try {
-    const data = await requestService.getAvailableRequests(req.userSupabase);
-    return success(res, data, "Available requests fetched");
-  } catch (e) {
-    next(e);
-  }
+exports.getAvailableRequests = async (req, res) => {
+  return res.status(403).json({
+    success: false,
+    error: "Open requests are restricted to admins. Volunteers only view assigned tasks."
+  });
 };
 
 // GET MY ASSIGNMENTS
@@ -117,21 +115,11 @@ exports.getMyAssignments = async (req, res, next) => {
 };
 
 // ACCEPT REQUEST
-exports.acceptRequest = async (req, res, next) => {
-  try {
-    const data = await assignmentService.assignRequest(
-      req.userSupabase,
-      {
-        requestId: req.params.requestId,
-        volunteerId: req.user.id,
-        assignedBy: req.user.id,
-        actorRole: req.profile.role
-      }
-    );
-    return success(res, data, "Request accepted", 201);
-  } catch (e) {
-    next(e);
-  }
+exports.acceptRequest = async (req, res) => {
+  return res.status(403).json({
+    success: false,
+    error: "Volunteers cannot self-accept requests. Requests are assigned by an admin."
+  });
 };
 
 // UPDATE ASSIGNED REQUEST STATUS

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Request Help – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c2f6b'/%3E%3Cpath d='M32 14c-8.3 0-15 6.7-15 15 0 10.5 15 23 15 23s15-12.5 15-23c0-8.3-6.7-15-15-15z' fill='%23f7931e'/%3E%3Ccircle cx='32' cy='29' r='5.5' fill='%23ffffff'/%3E%3C/svg%3E">
   </head>
   <body>
 
@@ -20,25 +19,39 @@
 
     <div class="page">
       <a class="back-link" href="citizen-dashboard.html">← Back to dashboard</a>
-      <h2>Request Help</h2>
+      <h2>Request Emergency Aid</h2>
 
       <form class="form-card" id="request-form">
 
-        <label class="title" for="type">What do you need?</label>
+        <label class="title" for="type">Aid category</label>
         <select id="type" name="type" required>
-          <option value="">Choose one</option>
-          <option value="Rescue">Rescue / evacuation</option>
-          <option value="Food">Food</option>
-          <option value="Water">Drinking water</option>
-          <option value="Medical">Medical help</option>
-          <option value="Other">Other (shelter, supplies...)</option>
+          <option value="">Choose an emergency aid category</option>
+          <option value="Rescue">Rescue / Evacuation</option>
+          <option value="Food">Emergency Food Rations</option>
+          <option value="Water">Safe Drinking Water</option>
+          <option value="Medical">Medical Aid &amp; Essential Care</option>
+          <option value="Other">Shelter &amp; Relief Supplies</option>
         </select>
 
-        <label class="title" for="people">How many people need help?</label>
-        <input id="people" name="people" type="number" min="1" value="1" required>
+        <div id="subtype-wrap" hidden>
+          <label class="title" for="subtype">Specific need</label>
+          <select id="subtype" name="subtype"></select>
+        </div>
 
-        <label class="title" for="description">Describe the situation</label>
-        <textarea id="description" name="description" required placeholder="For example: water level is rising, two elderly people on the second floor"></textarea>
+        <div id="medical-guard" hidden style="background:#fff5f5;border:1px solid #f3c4c9;border-radius:12px;padding:14px 16px;margin-top:14px;font-size:0.88rem;color:#7a1c24;">
+          <strong>Medical Request Verification Policy</strong>
+          <p style="margin:6px 0 8px;">To prevent misuse, ReliefLink only provides emergency first aid or short-term (1–3 day) essential chronic medication during disasters. Bulk or non-emergency free medicine requests will be cancelled by an admin, and prescription medicines require showing a valid prescription to the responder.</p>
+          <label style="display:flex;align-items:flex-start;gap:8px;font-weight:600;cursor:pointer;">
+            <input id="medical-confirm" type="checkbox" style="margin-top:3px;">
+            <span>I confirm this is a genuine emergency/essential medical need and will provide a valid prescription if requesting prescription medication.</span>
+          </label>
+        </div>
+
+        <label class="title" for="people">How many people need help?</label>
+        <input id="people" name="people" type="number" min="1" max="50" value="1" required>
+
+        <label class="title" for="description">Describe the emergency situation</label>
+        <textarea id="description" name="description" required placeholder="Describe the immediate situation (e.g., water level rising, elderly family member, specific landmark). Non-relief or unfeasible requests may be cancelled by an admin."></textarea>
 
         <label class="title" for="location">Your location</label>
         <div class="location-row">
@@ -52,7 +65,7 @@
         <div id="map"></div>
 
         <p class="error" id="error-message"></p>
-        <button type="submit" class="btn primary">Send Request</button>
+        <button type="submit" class="btn primary">Send Aid Request</button>
       </form>
     </div>
 
@@ -60,6 +73,69 @@
     <script src="../js/api.js"></script>
     <script type="module">
       import { initDashboardNotifications } from "./notifications.js";
+
+      const SUBTYPES = {
+        Rescue: [
+          "Flooded home / water rescue",
+          "Trapped / structural evacuation",
+          "Elderly or disabled evacuation",
+          "Stranded / welfare check"
+        ],
+        Food: [
+          "Emergency cooked meal packets",
+          "Dry rations (rice, lentils, biscuits)",
+          "Infant / baby nutrition"
+        ],
+        Water: [
+          "Safe drinking water bottles / cans",
+          "Water purification tablets / ORS"
+        ],
+        Medical: [
+          "First-aid & wound care kit",
+          "Short-term essential medication (1–3 days, prescription required)",
+          "Emergency medical transport / doctor assist"
+        ],
+        Other: [
+          "Temporary shelter / relocation",
+          "Blankets / tarpaulin / rain gear",
+          "Sanitation & hygiene kit",
+          "Emergency torch / power backup"
+        ]
+      };
+
+      const typeSelect = document.querySelector("#type");
+      const subtypeWrap = document.querySelector("#subtype-wrap");
+      const subtypeSelect = document.querySelector("#subtype");
+      const medicalGuard = document.querySelector("#medical-guard");
+      const medicalConfirm = document.querySelector("#medical-confirm");
+
+      typeSelect.addEventListener("change", () => {
+        const val = typeSelect.value;
+        const opts = SUBTYPES[val] || [];
+        subtypeSelect.innerHTML = "";
+        if (opts.length) {
+          const def = document.createElement("option");
+          def.value = "";
+          def.textContent = "Select specific aid needed";
+          subtypeSelect.appendChild(def);
+          opts.forEach((label) => {
+            const o = document.createElement("option");
+            o.value = label;
+            o.textContent = label;
+            subtypeSelect.appendChild(o);
+          });
+          subtypeSelect.required = true;
+          subtypeWrap.hidden = false;
+        } else {
+          subtypeSelect.required = false;
+          subtypeWrap.hidden = true;
+        }
+
+        const isMed = val === "Medical";
+        medicalGuard.hidden = !isMed;
+        medicalConfirm.required = isMed;
+        if (!isMed) medicalConfirm.checked = false;
+      });
 
       let latitude = null;
       let longitude = null;
@@ -171,18 +247,24 @@
           return;
         }
 
+        if (typeSelect.value === "Medical" && !medicalConfirm.checked) {
+          errorBox.textContent = "Please confirm the medical verification policy above.";
+          return;
+        }
+
         const button = e.target.querySelector("button[type='submit']");
         button.disabled = true;
         button.textContent = "Sending request...";
         try {
-          let text = document.querySelector("#description").value.trim();
+          const sub = subtypeSelect.value ? "Specific need: " + subtypeSelect.value + "\n" : "";
+          let text = sub + document.querySelector("#description").value.trim();
           const people = Number(document.querySelector("#people").value);
           const address = document.querySelector("#location").value.trim();
           if (people > 1) text += "\nPeople needing help: " + people;
           if (address) text += "\nAddress: " + address;
 
           await api.createRequest({
-            category: document.querySelector("#type").value,
+            category: typeSelect.value,
             description: text,
             latitude,
             longitude,
@@ -191,7 +273,7 @@
         } catch (err) {
           errorBox.textContent = err.message;
           button.disabled = false;
-          button.textContent = "Send Request";
+          button.textContent = "Send Aid Request";
         }
       });
     </script>
