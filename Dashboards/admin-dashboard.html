@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Dashboard – ReliefLink</title>
     <link rel="stylesheet" href="dashboard.css">
-    <script>
-      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-    </script>
-    <script defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
 
@@ -176,28 +172,7 @@
             actions.append(approveBtn, rejectBtn);
           }
 
-          if (["Pending", "Verified", "Assigned", "In Progress"].includes(r.status)) {
-          const cancelBtn = el("button", "btn outline sm", "Cancel");
-          cancelBtn.style.color = "#b81f2f";
-          cancelBtn.style.borderColor = "#f3c4c9";
-          cancelBtn.addEventListener("click", async () => {
-            if (!confirm("Cancel this request? (Use this for duplicate, unfeasible, or invalid requests.)")) return;
-            cancelBtn.disabled = true;
-            cancelBtn.textContent = "Cancelling...";
-            errorBox.textContent = "";
-            try {
-              await api.setRequestStatus(r.id, "Cancelled");
-              await load();
-            } catch (err) {
-              errorBox.textContent = err.message;
-              cancelBtn.disabled = false;
-              cancelBtn.textContent = "Cancel";
-            }
-          });
-          actions.append(cancelBtn);
-        }
-
-        card.append(info, actions);
+          card.append(info, actions);
           list.append(card);
         });
       }
@@ -273,6 +248,27 @@
             }
           });
           actions.append(resolve);
+        }
+
+          if (["Pending", "Verified", "Assigned", "In Progress"].includes(r.status)) {
+          const cancelBtn = el("button", "btn outline sm", "Cancel");
+          cancelBtn.style.color = "#b81f2f";
+          cancelBtn.style.borderColor = "#f3c4c9";
+          cancelBtn.addEventListener("click", async () => {
+            if (!confirm("Cancel this request? (Use this for duplicate, unfeasible, or invalid requests.)")) return;
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = "Cancelling...";
+            errorBox.textContent = "";
+            try {
+              await api.setRequestStatus(r.id, "Cancelled");
+              await load();
+            } catch (err) {
+              errorBox.textContent = err.message;
+              cancelBtn.disabled = false;
+              cancelBtn.textContent = "Cancel";
+            }
+          });
+          actions.append(cancelBtn);
         }
 
         card.append(info, actions);
