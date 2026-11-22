@@ -287,18 +287,36 @@ async function startRealChat() {
 
   let activeChannelId = nexconnPartnerId || null;
 
-  app.addEventListener(ChatUIEvents.CHANNEL_SELECTED, (event) => {
+  app.addEventListener(ChatUIEvents.CHANNEL_SELECTED, async (event) => {
     showStatus("");
+    const model = event?.data?.model || event?.data?.channelModel || null;
     const chId =
-      event?.data?.channelModel?.channelIdentifier?.channelId ||
+      model?.channelIdentifier?.channelId ||
+      model?.channelId ||
       event?.data?.channelIdentifier?.channelId ||
       event?.data?.channelId ||
       null;
-    if (chId) {
-      activeChannelId = chId;
-      const cached = userProfileCache.get(chId);
-      if (cached && cached.name) updatePartnerBanner(cached.name, cached.avatarUrl);
+    if (!chId) return;
+    activeChannelId = chId;
+    let cached = userProfileCache.get(chId);
+    if (!cached) {
+      try {
+        const fetched = await api.getChatProfiles([chId]);
+        (fetched || []).forEach((p) => {
+          if (p && p.userId) {
+            userProfileCache.set(p.userId, {
+              userId: p.userId,
+              name: p.name,
+              avatarUrl: p.avatarUrl || "",
+            });
+          }
+        });
+        cached = userProfileCache.get(chId);
+      } catch (_) {}
     }
+    const displayName = (cached && cached.name) || (model && model.name) || "";
+    const displayAvatar = (cached && cached.avatarUrl) || (model && model.avatarUrl) || "";
+    if (displayName) updatePartnerBanner(displayName, displayAvatar);
   });
 
   app.ready();
@@ -310,8 +328,44 @@ async function startRealChat() {
     );
   }
 
-  document.querySelector("#chatui-root").append(document.createElement("nc-chat-ui-app-provider"));
+  const chatRoot = document.querySelector("#chatui-root");
+  chatRoot.append(document.createElement("nc-chat-ui-app-provider"));
   showStatus("");
+
+  // Fix Nexconn ChatUI emoji panel overflowing behind the input toolbar on mobile
+  const EMOJI_FIX_ATTR = "data-rl-emoji-fixed";
+  function patchChatUiShadow(node) {
+    if (!node || node.nodeType !== 1) return;
+    const tag = node.tagName ? node.tagName.toLowerCase() : "";
+    if (node.shadowRoot && !node.hasAttribute(EMOJI_FIX_ATTR)) {
+      if (tag === "nc-input-provider") {
+        node.setAttribute(EMOJI_FIX_ATTR, "1");
+        const st = document.createElement("style");
+        st.textContent = ".nc-input-emoji-panel { overflow: hidden !important; background: #ffffff !important; }";
+        node.shadowRoot.appendChild(st);
+      } else if (tag === "nc-emoji-panel-provider") {
+        node.setAttribute(EMOJI_FIX_ATTR, "1");
+        const st = document.createElement("style");
+        st.textContent =
+          ":host { overflow: hidden !important; max-height: 248px !important; background: #ffffff !important; } " +
+          ":host > div { display: flex; flex-direction: column; height: 100%; max-height: 248px; overflow: hidden; } " +
+          ".emoji-list { flex: 1; min-height: 0; overflow-y: auto !important; -webkit-overflow-scrolling: touch; }";
+        node.shadowRoot.appendChild(st);
+      }
+      observeShadow(node.shadowRoot);
+    }
+    node.querySelectorAll && node.querySelectorAll("*").forEach(patchChatUiShadow);
+  }
+  function observeShadow(root) {
+    if (!root || root._rlObserved) return;
+    root._rlObserved = true;
+    const obs = new MutationObserver((mutations) => {
+      mutations.forEach((m) => m.addedNodes.forEach(patchChatUiShadow));
+    });
+    obs.observe(root, { childList: true, subtree: true });
+    root.querySelectorAll("*").forEach(patchChatUiShadow);
+  }
+  observeShadow(chatRoot);
 
   attachNotificationListener({
     NCEngine,
