@@ -273,7 +273,7 @@
               "Skills: " + (payload.skills.join(", ") || "None listed") + "\n" +
               "Message: " + (payload.message || "N/A")
             );
-            mailtoLink.href = "mailto:" + (res?.fallbackEmail || "") + "?subject=" + subject + "&body=" + body;
+            mailtoLink.href = "mailto:relieflink.support@gmail.com?subject=" + subject + "&body=" + body;
             mailtoWrap.hidden = false;
             applyMsg.className = "modal-msg ok";
             applyMsg.textContent = "Click 'Send via Email App' below to send your application directly to the admin.";
