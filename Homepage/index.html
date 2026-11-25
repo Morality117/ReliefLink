@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -6,7 +7,9 @@
     <title>ReliefLink – Connect, Coordinate, Save Lives</title>
     <link rel="stylesheet" href="home.css">
     <script>
-      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+      window.va = window.va || function () {
+        (window.vaq = window.vaq || []).push(arguments);
+      };
     </script>
     <script defer src="/_vercel/insights/script.js"></script>
   </head>
@@ -178,7 +181,6 @@
       <p>Connect • Coordinate • Save Lives</p>
     </footer>
 
-
     <!-- APPLY TO VOLUNTEER MODAL -->
     <div class="modal-backdrop" id="apply-modal">
       <div class="modal">
@@ -191,9 +193,13 @@
           <input id="app-skills" type="text" placeholder="Skills (e.g. First Aid, Rescue, Driving)">
           <textarea id="app-message" placeholder="Tell the admin your area/city and availability..."></textarea>
           <p class="modal-msg" id="apply-msg"></p>
+
           <div id="apply-mailto-wrap" style="margin-bottom:10px;">
-            <a id="apply-mailto-link" class="btn outline" style="width:100%;text-align:center;" href="#">Or Email Admin Directly</a>
+            <a id="apply-mailto-link" class="btn outline" style="width:100%;text-align:center;" href="mailto:relieflink.support@gmail.com" target="_blank">
+              Or Email Admin Directly
+            </a>
           </div>
+
           <button type="submit" class="btn primary" style="width:100%;">Submit Application</button>
           <button type="button" class="btn outline" id="apply-close" style="width:100%;margin-top:8px;">Close</button>
         </form>
@@ -202,50 +208,67 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
     <script src="../js/api.js"></script>
+
+    <!-- VOLUNTEER APPLICATION SCRIPT -->
     <script>
+      const ADMIN_EMAIL = "relieflink.support@gmail.com";
+
       const applyModal = document.querySelector("#apply-modal");
       const applyForm = document.querySelector("#apply-form");
       const applyMsg = document.querySelector("#apply-msg");
       const mailtoWrap = document.querySelector("#apply-mailto-wrap");
       const mailtoLink = document.querySelector("#apply-mailto-link");
 
-      
       function updateMailtoLink() {
         const name = document.querySelector("#app-name").value.trim();
         const email = document.querySelector("#app-email").value.trim();
         const phone = document.querySelector("#app-phone").value.trim();
         const skills = document.querySelector("#app-skills").value.trim();
         const message = document.querySelector("#app-message").value.trim();
-        const subject = encodeURIComponent("ReliefLink Volunteer Application" + (name ? ": " + name : ""));
-        const body = encodeURIComponent(
-          "Name: " + (name || "") + "\n" +
-          "Email: " + (email || "") + "\n" +
-          "Phone: " + (phone || "") + "\n" +
-          "Skills: " + (skills || "None listed") + "\n" +
-          "Message: " + (message || "")
+
+        const subject = encodeURIComponent(
+          "ReliefLink Volunteer Application" + (name ? ": " + name : "")
         );
-        mailtoLink.href = "mailto:?subject=" + subject + "&body=" + body;
+
+        const body = encodeURIComponent(
+          "Name: " + name + "\n" +
+          "Email: " + email + "\n" +
+          "Phone: " + phone + "\n" +
+          "Skills: " + (skills || "None listed") + "\n" +
+          "Message: " + (message || "N/A")
+        );
+
+        // Always use the fixed admin email address.
+        mailtoLink.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
       }
-      ["#app-name", "#app-email", "#app-phone", "#app-skills", "#app-message"].forEach((sel) => {
-        document.querySelector(sel).addEventListener("input", updateMailtoLink);
+
+      // Update the email link whenever the applicant changes their details.
+      ["#app-name", "#app-email", "#app-phone", "#app-skills", "#app-message"].forEach((selector) => {
+        document.querySelector(selector).addEventListener("input", updateMailtoLink);
       });
+
       updateMailtoLink();
 
       document.querySelector("#open-apply-btn").addEventListener("click", () => {
         applyMsg.textContent = "";
         applyMsg.className = "modal-msg";
+        mailtoWrap.hidden = false;
         updateMailtoLink();
         applyModal.style.display = "flex";
       });
+
       document.querySelector("#apply-close").addEventListener("click", () => {
         applyModal.style.display = "none";
       });
 
+      // Volunteer application submission.
       applyForm.addEventListener("submit", async (e) => {
         e.preventDefault();
+
         applyMsg.textContent = "";
         applyMsg.className = "modal-msg";
         updateMailtoLink();
+
         const btn = applyForm.querySelector("button[type='submit']");
         btn.disabled = true;
         btn.textContent = "Submitting...";
@@ -254,38 +277,50 @@
           full_name: document.querySelector("#app-name").value.trim(),
           email: document.querySelector("#app-email").value.trim(),
           phone: document.querySelector("#app-phone").value.trim(),
-          skills: document.querySelector("#app-skills").value.split(",").map((s) => s.trim()).filter(Boolean),
-          message: document.querySelector("#app-message").value.trim(),
+          skills: document.querySelector("#app-skills").value
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          message: document.querySelector("#app-message").value.trim()
         };
 
         try {
           const res = await api.submitVolunteerApplication(payload);
+
           if (res && res.stored) {
             applyForm.reset();
+            updateMailtoLink();
+
+            mailtoWrap.hidden = true;
             applyMsg.className = "modal-msg ok";
-            applyMsg.textContent = "Application submitted! An admin will review it and reach out with your login details.";
+            applyMsg.textContent =
+              "Application submitted successfully! An admin will review it and reach out with your login details.";
+
           } else {
-            const subject = encodeURIComponent("ReliefLink Volunteer Application: " + payload.full_name);
-            const body = encodeURIComponent(
-              "Name: " + payload.full_name + "\n" +
-              "Email: " + payload.email + "\n" +
-              "Phone: " + payload.phone + "\n" +
-              "Skills: " + (payload.skills.join(", ") || "None listed") + "\n" +
-              "Message: " + (payload.message || "N/A")
-            );
-            mailtoLink.href = "mailto:relieflink.support@gmail.com?subject=" + subject + "&body=" + body;
+            updateMailtoLink();
             mailtoWrap.hidden = false;
+
             applyMsg.className = "modal-msg ok";
-            applyMsg.textContent = "Click 'Send via Email App' below to send your application directly to the admin.";
+            applyMsg.textContent =
+              "Your application could not be stored automatically. Click 'Or Email Admin Directly' below to send it to the admin.";
           }
+
         } catch (err) {
-          applyMsg.textContent = err.message;
+          // Show the direct email option if the API fails.
+          updateMailtoLink();
+          mailtoWrap.hidden = false;
+
+          applyMsg.className = "modal-msg";
+          applyMsg.textContent =
+            "We couldn't submit your application automatically. You can email the admin directly using the link below.";
+
+          console.error("Volunteer application error:", err);
         }
+
         btn.disabled = false;
         btn.textContent = "Submit Application";
       });
     </script>
-
 
     <!-- PRIVACY POLICY MODAL -->
     <div class="modal-backdrop" id="privacy-modal">
@@ -317,6 +352,7 @@
       </div>
     </div>
 
+    <!-- PRIVACY AND TERMS SCRIPT -->
     <script>
       (function () {
         const privModal = document.querySelector("#privacy-modal");
@@ -326,14 +362,17 @@
           e.preventDefault();
           privModal.style.display = "flex";
         });
+
         document.querySelector("#open-terms").addEventListener("click", (e) => {
           e.preventDefault();
           termsModal.style.display = "flex";
         });
+
         document.querySelector("#privacy-close").addEventListener("click", () => {
           privModal.style.display = "none";
           if (location.hash === "#privacy") history.replaceState(null, "", location.pathname);
         });
+
         document.querySelector("#terms-close").addEventListener("click", () => {
           termsModal.style.display = "none";
           if (location.hash === "#terms") history.replaceState(null, "", location.pathname);
@@ -346,3 +385,4 @@
 
   </body>
 </html>
+```
